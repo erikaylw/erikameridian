@@ -1,6 +1,76 @@
 {
   "decisions": [
     {
+      "id": "dec_1782957061720_3n4qru",
+      "ts": "2026-07-02T01:51:01.720Z",
+      "type": "skip",
+      "actor": "SCREENER",
+      "pool": null,
+      "pool_name": null,
+      "position": null,
+      "summary": "Screening skipped",
+      "reason": "Insufficient SOL (0.000 < 0.65)",
+      "risks": [],
+      "metrics": {},
+      "rejected": []
+    },
+    {
+      "id": "dec_1782957000820_gc3fp0",
+      "ts": "2026-07-02T01:50:00.820Z",
+      "type": "skip",
+      "actor": "SCREENER",
+      "pool": null,
+      "pool_name": null,
+      "position": null,
+      "summary": "Screening skipped",
+      "reason": "Insufficient SOL (0.000 < 0.65)",
+      "risks": [],
+      "metrics": {},
+      "rejected": []
+    },
+    {
+      "id": "dec_1782956881693_ehpvoc",
+      "ts": "2026-07-02T01:48:01.693Z",
+      "type": "skip",
+      "actor": "SCREENER",
+      "pool": null,
+      "pool_name": null,
+      "position": null,
+      "summary": "Screening skipped",
+      "reason": "Insufficient SOL (0.000 < 0.65)",
+      "risks": [],
+      "metrics": {},
+      "rejected": []
+    },
+    {
+      "id": "dec_1782956701594_ri0waj",
+      "ts": "2026-07-02T01:45:01.594Z",
+      "type": "skip",
+      "actor": "SCREENER",
+      "pool": null,
+      "pool_name": null,
+      "position": null,
+      "summary": "Screening skipped",
+      "reason": "Insufficient SOL (0.000 < 0.65)",
+      "risks": [],
+      "metrics": {},
+      "rejected": []
+    },
+    {
+      "id": "dec_1782956521474_75g76c",
+      "ts": "2026-07-02T01:42:01.474Z",
+      "type": "skip",
+      "actor": "SCREENER",
+      "pool": null,
+      "pool_name": null,
+      "position": null,
+      "summary": "Screening skipped",
+      "reason": "Insufficient SOL (0.000 < 0.65)",
+      "risks": [],
+      "metrics": {},
+      "rejected": []
+    },
+    {
       "id": "dec_1782956400556_5txh7z",
       "ts": "2026-07-02T01:40:00.556Z",
       "type": "skip",
@@ -1470,91 +1540,6 @@
       "rejected": [
         "ASTEROID-SOL: real-time fee/TVL 0.1082% below 0.6% minimum",
         "LR-SOL: creator holds 19.39% > 10% limit"
-      ]
-    },
-    {
-      "id": "dec_1782945724299_r2r3ui",
-      "ts": "2026-07-01T22:42:04.299Z",
-      "type": "no_deploy",
-      "actor": "SCREENER",
-      "pool": null,
-      "pool_name": null,
-      "position": null,
-      "summary": "No candidates available",
-      "reason": "- ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum - LR-SOL: creator holds 19.39% > 10% limit",
-      "risks": [],
-      "metrics": {},
-      "rejected": [
-        "ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum",
-        "LR-SOL: creator holds 19.39% > 10% limit"
-      ]
-    },
-    {
-      "id": "dec_1782945724005_fyp99x",
-      "ts": "2026-07-01T22:42:04.005Z",
-      "type": "no_deploy",
-      "actor": "SCREENER",
-      "pool": null,
-      "pool_name": null,
-      "position": null,
-      "summary": "No candidates available",
-      "reason": "- ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum - LR-SOL: creator holds 19.39% > 10% limit",
-      "risks": [],
-      "metrics": {},
-      "rejected": [
-        "ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum",
-        "LR-SOL: creator holds 19.39% > 10% limit"
-      ]
-    },
-    {
-      "id": "dec_1782945603785_8owfu9",
-      "ts": "2026-07-01T22:40:03.785Z",
-      "type": "no_deploy",
-      "actor": "SCREENER",
-      "pool": null,
-      "pool_name": null,
-      "position": null,
-      "summary": "No candidates available",
-      "reason": "- ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum - LR-SOL: creator holds 19.39% > 10% limit",
-      "risks": [],
-      "metrics": {},
-      "rejected": [
-        "ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum",
-        "LR-SOL: creator holds 19.39% > 10% limit"
-      ]
-    },
-    {
-      "id": "dec_1782945603120_ct3oyk",
-      "ts": "2026-07-01T22:40:03.120Z",
-      "type": "no_deploy",
-      "actor": "SCREENER",
-      "pool": null,
-      "pool_name": null,
-      "position": null,
-      "summary": "No candidates available",
-      "reason": "- ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum - LR-SOL: creator holds 19.39% > 10% limit",
-      "risks": [],
-      "metrics": {},
-      "rejected": [
-        "ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum",
-        "LR-SOL: creator holds 19.39% > 10% limit"
-      ]
-    },
-    {
-      "id": "dec_1782945543821_rhkvej",
-      "ts": "2026-07-01T22:39:03.821Z",
-      "type": "no_deploy",
-      "actor": "SCREENER",
-      "pool": null,
-      "pool_name": null,
-      "position": null,
-      "summary": "No candidates available",
-      "reason": "- America250-USDC: quote USDC is not SOL - ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum",
-      "risks": [],
-      "metrics": {},
-      "rejected": [
-        "America250-USDC: quote USDC is not SOL",
-        "ASTEROID-SOL: real-time fee/TVL 0.1074% below 0.6% minimum"
       ]
     }
   ]
