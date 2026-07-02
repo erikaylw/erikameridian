@@ -6,6 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
 const DEFAULT_HIVEMIND_URL = "https://api.agentmeridian.xyz";
 const DEFAULT_AGENT_MERIDIAN_API_URL = "https://api.agentmeridian.xyz/api";
+const DEFAULT_AGENT_MERIDIAN_PUBLIC_KEY = "bWVyaWRpYW4taXMtdGhlLWJlc3QtYWdlbnRz";
+const DEFAULT_HIVEMIND_API_KEY = DEFAULT_AGENT_MERIDIAN_PUBLIC_KEY;
 
 const u = fs.existsSync(USER_CONFIG_PATH)
   ? JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"))
@@ -22,6 +24,15 @@ if (u.publicApiKey) process.env.PUBLIC_API_KEY ||= u.publicApiKey;
 if (u.agentMeridianApiUrl) process.env.AGENT_MERIDIAN_API_URL ||= u.agentMeridianApiUrl;
 
 const indicatorUserConfig = u.chartIndicators ?? {};
+
+function nonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
 
 export const config = {
   // ─── Risk Limits ─────────────────────────
@@ -59,6 +70,21 @@ export const config = {
     minTokenAgeHours:   u.minTokenAgeHours   ?? null, // null = no minimum
     maxTokenAgeHours:   u.maxTokenAgeHours   ?? null, // null = no maximum
     athFilterPct:       u.athFilterPct       ?? null, // e.g. -20 = only deploy if price is >= 20% below ATH
+    minKolCount:        u.minKolCount        ?? null, // require at least N KOL clusters present (null = disabled)
+    minSmartDegenCount: u.minSmartDegenCount ?? null, // require smart_money_buy signal (null = disabled)
+    maxSuspiciousPct:   u.maxSuspiciousPct   ?? null, // max suspicious wallet % from OKX (null = disabled)
+    maxDevHoldPct:      u.maxDevHoldPct      ?? null, // max dev holding % (null = disabled, informational for now)
+    maxRugRatio:        u.maxRugRatio        ?? null, // max rug ratio threshold (null = disabled)
+    maxMcapToTvlRatio:  u.maxMcapToTvlRatio  ?? 7,   // max allowed mcap:tvl ratio (e.g. 7 = mcap must be ≤7× TVL)
+    minVolume5m:        u.minVolume5m        ?? 1_000, // minimum 5m volume (USD) — hard floor independent of minVolume
+    solQuoteOnly:       u.solQuoteOnly       ?? true,  // only deploy SOL-quoted DLMM pools
+    minRealtimeFeeTvlRatio: u.minRealtimeFeeTvlRatio ?? 1, // minimum current timeframe fee/active TVL % before deploy
+    // Fast-track: new pools with high volume bypass normal holder/organic/mcap filters
+    minFee24hTvlRatio:    u.minFee24hTvlRatio    ?? 7,    // minimum fee/TVL % over 24h before deploying (null = disabled)
+    fastTrackEnabled:     u.fastTrackEnabled     ?? true,
+    fastTrackMaxAgeHours: u.fastTrackMaxAgeHours ?? 3,       // max token age (hours) to qualify
+    fastTrackMinVolume:   u.fastTrackMinVolume   ?? 40_000,  // minimum 5m volume (USD) to qualify
+    fastTrackMinBins:     u.fastTrackMinBins     ?? 40,      // minimum bins_below to use when deploying
   },
 
   // ─── Position Management ────────────────
@@ -70,10 +96,18 @@ export const config = {
     oorCooldownTriggerCount: u.oorCooldownTriggerCount ?? 3,
     oorCooldownHours:       u.oorCooldownHours       ?? 12,
     minVolumeToRebalance:  u.minVolumeToRebalance  ?? 1000,
+    fastOorCutlossMinutes:    u.fastOorCutlossMinutes    ?? 10,  // close immediately if OOR + loss > threshold within this window
+    fastOorCutlossPct:        u.fastOorCutlossPct        ?? -10, // PnL % threshold that triggers fast OOR cutloss
+    manualCloseCooldownHours: u.manualCloseCooldownHours ?? 2,   // cooldown on token after manual/force close via web
+    poolCloseCooldownHours:   u.poolCloseCooldownHours   ?? 6,   // cooldown after any normal bot close
+    weakCloseCooldownHours:   u.weakCloseCooldownHours   ?? 24,  // cooldown after OOR/low-yield/volume-dead closes
     stopLossPct:           u.stopLossPct           ?? u.emergencyPriceDropPct ?? -50,
     takeProfitPct:         u.takeProfitPct         ?? u.takeProfitFeePct ?? 5,
     minFeePerTvl24h:       u.minFeePerTvl24h       ?? 7,
     minAgeBeforeYieldCheck: u.minAgeBeforeYieldCheck ?? 60, // minutes before low yield can trigger close
+    // Low-yield proof — prevent closing profitable/recovering positions on low yield alone
+    lowYieldProofDrawdownPct:  u.lowYieldProofDrawdownPct  ?? null, // e.g. -2: only close if PnL <= -2%
+    lowYieldProofRecoveryPct:  u.lowYieldProofRecoveryPct  ?? null, // e.g. -0.5: hold if PnL >= -0.5% (recovering)
     minSolToOpen:          u.minSolToOpen          ?? 0.55,
     deployAmountSol:       u.deployAmountSol       ?? 0.5,
     gasReserve:            u.gasReserve            ?? 0.2,
@@ -82,6 +116,9 @@ export const config = {
     trailingTakeProfit:    u.trailingTakeProfit    ?? true,
     trailingTriggerPct:    u.trailingTriggerPct    ?? 3,    // activate trailing at X% PnL
     trailingDropPct:       u.trailingDropPct       ?? 1.5,  // close when drops X% from peak
+    // TP review mode — at tpReviewTriggerPct, LLM evaluates before closing
+    tpExitMode:            u.tpExitMode            ?? "direct", // "direct" | "review"
+    tpReviewTriggerPct:    u.tpReviewTriggerPct    ?? null,     // e.g. 7: trigger LLM review at 7% PnL
     pnlSanityMaxDiffPct:   u.pnlSanityMaxDiffPct   ?? 5,    // max allowed diff between reported and derived pnl % before ignoring a tick
     // SOL mode — positions, PnL, and balances reported in SOL instead of USD
     solMode:               u.solMode               ?? false,
@@ -102,6 +139,7 @@ export const config = {
 
   // ─── LLM Settings ──────────────────────
   llm: {
+    openRouterKey: u.openRouterKey ?? process.env.OPENROUTER_API_KEY ?? "",
     temperature: u.temperature ?? 0.373,
     maxTokens:   u.maxTokens   ?? 4096,
     maxSteps:    u.maxSteps    ?? 20,
@@ -131,16 +169,27 @@ export const config = {
 
   // ─── HiveMind ─────────────────────────
   hiveMind: {
-    url: u.hiveMindUrl ?? DEFAULT_HIVEMIND_URL,
-    apiKey: u.hiveMindApiKey ?? "",
+    url: nonEmptyString(u.hiveMindUrl, DEFAULT_HIVEMIND_URL),
+    apiKey: nonEmptyString(u.hiveMindApiKey, process.env.HIVEMIND_API_KEY, DEFAULT_HIVEMIND_API_KEY),
     agentId: u.agentId ?? null,
     pullMode: u.hiveMindPullMode ?? "auto",
   },
 
   api: {
-    url: u.agentMeridianApiUrl ?? process.env.AGENT_MERIDIAN_API_URL ?? DEFAULT_AGENT_MERIDIAN_API_URL,
-    publicApiKey: u.publicApiKey ?? process.env.PUBLIC_API_KEY ?? "",
+    url: nonEmptyString(u.agentMeridianApiUrl, process.env.AGENT_MERIDIAN_API_URL, DEFAULT_AGENT_MERIDIAN_API_URL),
+    publicApiKey: nonEmptyString(u.publicApiKey, process.env.PUBLIC_API_KEY, DEFAULT_AGENT_MERIDIAN_PUBLIC_KEY),
     lpAgentRelayEnabled: u.lpAgentRelayEnabled ?? false,
+  },
+
+  jupiter: {
+    // Internal Jupiter Ultra settings; override by env only, do not expose in user-config.
+    apiKey: process.env.JUPITER_API_KEY ?? "",
+    referralAccount:
+      process.env.JUPITER_REFERRAL_ACCOUNT ??
+      "9MzhDUnq3KxecyPzvhguQMMPbooXQ3VAoCMPDnoijwey",
+    referralFeeBps: Number(
+      process.env.JUPITER_REFERRAL_FEE_BPS ?? 50,
+    ),
   },
 
   indicators: {
@@ -150,7 +199,7 @@ export const config = {
     rsiLength: indicatorUserConfig.rsiLength ?? 2,
     intervals: Array.isArray(indicatorUserConfig.intervals)
       ? indicatorUserConfig.intervals
-      : ["5_MINUTE", "15_MINUTE"],
+      : ["5_MINUTE"],
     candles: indicatorUserConfig.candles ?? 298,
     rsiOversold: indicatorUserConfig.rsiOversold ?? 30,
     rsiOverbought: indicatorUserConfig.rsiOverbought ?? 80,
@@ -216,5 +265,17 @@ export function reloadScreeningThresholds() {
     if (fresh.maxBotHoldersPct  != null) s.maxBotHoldersPct = fresh.maxBotHoldersPct;
     if (fresh.allowedLaunchpads !== undefined) s.allowedLaunchpads = fresh.allowedLaunchpads;
     if (fresh.blockedLaunchpads !== undefined) s.blockedLaunchpads = fresh.blockedLaunchpads;
+    if (fresh.maxMcapToTvlRatio  !== undefined) s.maxMcapToTvlRatio  = fresh.maxMcapToTvlRatio;
+    if (fresh.minVolume5m        != null)       s.minVolume5m        = fresh.minVolume5m;
+    if (fresh.minFee24hTvlRatio  !== undefined) s.minFee24hTvlRatio  = fresh.minFee24hTvlRatio;
+    if (fresh.fastTrackEnabled   !== undefined) s.fastTrackEnabled   = fresh.fastTrackEnabled;
+    if (fresh.fastTrackMaxAgeHours != null)     s.fastTrackMaxAgeHours = fresh.fastTrackMaxAgeHours;
+    if (fresh.fastTrackMinVolume != null)       s.fastTrackMinVolume = fresh.fastTrackMinVolume;
+    if (fresh.fastTrackMinBins   != null)       s.fastTrackMinBins   = fresh.fastTrackMinBins;
+    if (fresh.minKolCount        !== undefined)  s.minKolCount        = fresh.minKolCount;
+    if (fresh.minSmartDegenCount !== undefined)  s.minSmartDegenCount = fresh.minSmartDegenCount;
+    if (fresh.maxSuspiciousPct   !== undefined)  s.maxSuspiciousPct   = fresh.maxSuspiciousPct;
+    if (fresh.maxDevHoldPct      !== undefined)  s.maxDevHoldPct      = fresh.maxDevHoldPct;
+    if (fresh.maxRugRatio        !== undefined)  s.maxRugRatio        = fresh.maxRugRatio;
   } catch { /* ignore */ }
 }

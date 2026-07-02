@@ -1,18 +1,10 @@
 import { config } from "../config.js";
 import { log } from "../logger.js";
+import { agentMeridianJson, getAgentMeridianHeaders } from "./agent-meridian.js";
+import { safeNumber } from "../utils/number.js";
 
-const DEFAULT_INTERVALS = ["5_MINUTE", "15_MINUTE"];
+const DEFAULT_INTERVALS = ["5_MINUTE"];
 const DEFAULT_CANDLES = 298;
-
-function getApiBase() {
-  return String(config.api.url || "https://api.agentmeridian.xyz/api").replace(/\/+$/, "");
-}
-
-function getHeaders() {
-  const headers = {};
-  if (config.api.publicApiKey) headers["x-api-key"] = config.api.publicApiKey;
-  return headers;
-}
 
 function normalizeIntervals(intervals) {
   const list = Array.isArray(intervals) ? intervals : DEFAULT_INTERVALS;
@@ -22,18 +14,45 @@ function normalizeIntervals(intervals) {
 }
 
 function safeNum(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  return safeNumber(value, null);
 }
 
 function buildSignalSummary(payload) {
   const latest = payload?.latest || {};
   const candle = latest?.candle || {};
+  const previousCandle = latest?.previousCandle || {};
   const rsi = safeNum(latest?.rsi?.value);
   const bollinger = latest?.bollinger || {};
   const supertrend = latest?.supertrend || {};
+  const fibonacciLevels = latest?.fibonacci?.levels || {};
+
+  // MA12 and MA21 — try multiple field names from API
+  const ma12 = safeNum(
+    latest?.ma12?.value ?? latest?.ema12?.value ?? latest?.sma12?.value ??
+    latest?.ma?.["12"]?.value ?? latest?.indicators?.ma12 ?? null
+  );
+  const ma21 = safeNum(
+    latest?.ma21?.value ?? latest?.ema21?.value ?? latest?.sma21?.value ??
+    latest?.ma?.["21"]?.value ?? latest?.indicators?.ma21 ??
+    bollinger.middle ?? null  // fallback: bollinger middle ≈ SMA20
+  );
+  const prevMa12 = safeNum(
+    payload?.previous?.ma12?.value ?? payload?.previous?.ema12?.value ?? null
+  );
+  const prevMa21 = safeNum(
+    payload?.previous?.ma21?.value ?? payload?.previous?.ema21?.value ?? null
+  );
+
+  // MA12 crossed above MA21 (bullish crossover)
+  const ma12CrossAboveMa21 = (
+    ma12 != null && ma21 != null &&
+    prevMa12 != null && prevMa21 != null &&
+    prevMa12 <= prevMa21 && ma12 > ma21
+  );
+
   return {
     close: safeNum(candle.close),
+    previousClose: safeNum(previousCandle.close),
     rsi,
     lowerBand: safeNum(bollinger.lower),
     middleBand: safeNum(bollinger.middle),
@@ -42,6 +61,12 @@ function buildSignalSummary(payload) {
     supertrendDirection: String(supertrend.direction || "unknown"),
     supertrendBreakUp: !!latest?.states?.supertrendBreakUp,
     supertrendBreakDown: !!latest?.states?.supertrendBreakDown,
+    fib50: safeNum(fibonacciLevels["0.500"]),
+    fib618: safeNum(fibonacciLevels["0.618"]),
+    fib786: safeNum(fibonacciLevels["0.786"]),
+    ma12,
+    ma21,
+    ma12CrossAboveMa21,
   };
 }
 
@@ -50,11 +75,24 @@ function evaluatePreset(side, preset, payload) {
   const oversold = Number(config.indicators.rsiOversold ?? 30);
   const overbought = Number(config.indicators.rsiOverbought ?? 80);
   const close = summary.close;
+  const previousClose = summary.previousClose;
   const lowerBand = summary.lowerBand;
   const upperBand = summary.upperBand;
   const rsi = summary.rsi;
   const isBullish = summary.supertrendDirection === "bullish";
   const isBearish = summary.supertrendDirection === "bearish";
+  const crossedUp = (level) =>
+    level != null &&
+    close != null &&
+    previousClose != null &&
+    previousClose < level &&
+    close >= level;
+  const crossedDown = (level) =>
+    level != null &&
+    close != null &&
+    previousClose != null &&
+    previousClose > level &&
+    close <= level;
 
   switch (preset) {
     case "supertrend_break":
@@ -109,6 +147,80 @@ function evaluatePreset(side, preset, payload) {
             reason: `RSI overbought with bearish Supertrend context`,
             signal: summary,
           };
+    case "supertrend_or_rsi":
+      return side === "entry"
+        ? {
+            confirmed:
+              summary.supertrendBreakUp ||
+              (isBullish && close != null && summary.supertrendValue != null && close >= summary.supertrendValue) ||
+              (rsi != null && rsi <= oversold),
+            reason: "Supertrend bullish confirmation or RSI oversold",
+            signal: summary,
+          }
+        : {
+            confirmed:
+              summary.supertrendBreakDown ||
+              (isBearish && close != null && summary.supertrendValue != null && close <= summary.supertrendValue) ||
+              (rsi != null && rsi >= overbought),
+            reason: "Supertrend bearish confirmation or RSI overbought",
+            signal: summary,
+          };
+    case "bb_plus_rsi":
+      return side === "entry"
+        ? {
+            confirmed:
+              close != null &&
+              lowerBand != null &&
+              close <= lowerBand &&
+              rsi != null &&
+              rsi <= oversold,
+            reason: "Close at/below lower band with RSI oversold",
+            signal: summary,
+          }
+        : {
+            confirmed:
+              close != null &&
+              upperBand != null &&
+              close >= upperBand &&
+              rsi != null &&
+              rsi >= overbought,
+            reason: "Close at/above upper band with RSI overbought",
+            signal: summary,
+          };
+    case "fibo_reclaim":
+      return side === "entry"
+        ? {
+            confirmed:
+              crossedUp(summary.fib618) ||
+              crossedUp(summary.fib50) ||
+              crossedUp(summary.fib786),
+            reason: "Price reclaimed a key Fibonacci level",
+            signal: summary,
+          }
+        : {
+            confirmed:
+              crossedUp(summary.fib618) ||
+              crossedUp(summary.fib50),
+            reason: "Price reclaimed a key Fibonacci level upward",
+            signal: summary,
+          };
+    case "fibo_reject":
+      return side === "entry"
+        ? {
+            confirmed:
+              crossedDown(summary.fib618) ||
+              crossedDown(summary.fib50),
+            reason: "Price rejected from a key Fibonacci level",
+            signal: summary,
+          }
+        : {
+            confirmed:
+              crossedDown(summary.fib618) ||
+              crossedDown(summary.fib50) ||
+              crossedDown(summary.fib786),
+            reason: "Price rejected below a key Fibonacci level",
+            signal: summary,
+          };
     default:
       return {
         confirmed: false,
@@ -118,7 +230,7 @@ function evaluatePreset(side, preset, payload) {
   }
 }
 
-export async function fetchChartIndicatorsForMint(
+async function fetchChartIndicatorsForMint(
   mint,
   {
     interval,
@@ -135,20 +247,9 @@ export async function fetchChartIndicatorsForMint(
   });
   if (refresh) search.set("refresh", "1");
 
-  const res = await fetch(`${getApiBase()}/chart-indicators/${mint}?${search.toString()}`, {
-    headers: getHeaders(),
+  return agentMeridianJson(`/chart-indicators/${mint}?${search.toString()}`, {
+    headers: getAgentMeridianHeaders(),
   });
-  const text = await res.text().catch(() => "");
-  let payload = {};
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = { raw: text };
-  }
-  if (!res.ok) {
-    throw new Error(payload?.error || `chart indicators ${res.status}`);
-  }
-  return payload;
 }
 
 export async function confirmIndicatorPreset({

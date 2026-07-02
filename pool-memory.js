@@ -176,6 +176,41 @@ export function recordPoolDeploy(poolAddress, deployData) {
   log("pool-memory", `Recorded deploy for ${entry.name} (${poolAddress.slice(0, 8)}): PnL ${deploy.pnl_pct}%`);
 }
 
+/**
+ * Set a cooldown after a manual/force close detected via web.
+ * Called from state.js syncOpenPositions when a position disappears without bot action.
+ */
+export function setManualCloseCooldown(poolAddress, baseMint, hours, reason) {
+  const db = load();
+
+  if (!db[poolAddress]) {
+    db[poolAddress] = {
+      name: poolAddress.slice(0, 8),
+      base_mint: baseMint || null,
+      deploys: [],
+      total_deploys: 0,
+      avg_pnl_pct: 0,
+      win_rate: 0,
+      adjusted_win_rate: 0,
+      adjusted_win_rate_sample_count: 0,
+      last_deployed_at: null,
+      last_outcome: null,
+      notes: [],
+    };
+  }
+
+  const entry = db[poolAddress];
+  if (baseMint && !entry.base_mint) entry.base_mint = baseMint;
+  const resolvedMint = baseMint || entry.base_mint || null;
+
+  setPoolCooldown(entry, hours, reason);
+  if (resolvedMint) setBaseMintCooldown(db, resolvedMint, hours, reason);
+
+  save(db);
+  log("pool-memory", `Manual close cooldown: pool ${poolAddress.slice(0, 8)}, token ${resolvedMint?.slice(0, 8) ?? "unknown"} — ${hours}h (${reason})`);
+  return { cooldown_until: entry.cooldown_until, base_mint: resolvedMint };
+}
+
 export function isPoolOnCooldown(poolAddress) {
   if (!poolAddress) return false;
   const db = load();

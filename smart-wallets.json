@@ -1,0 +1,119 @@
+{
+  "wallets": [
+    {
+      "name": "Binance Smart Money Axiom",
+      "address": "5BxootbxVKu7uYLRRusSD7GR5srM3iHFfBE6rr5eRXb4",
+      "category": "smart_money",
+      "type": "degen",
+      "tags": [
+        "binance_funded",
+        "axiom",
+        "multi_token"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "Found in EMC-SOL TOP1 (+$899 realized) and drooling-SOL TOP3. Funded from Binance."
+    },
+    {
+      "name": "Crodie Smart Money",
+      "address": "Hy5oMPLvzYXrFMKWsAHEfNtU3xYtUvdkCh9ByAGVwzAZ",
+      "category": "smart_money",
+      "type": "degen",
+      "tags": [
+        "crodie_funded",
+        "axiom",
+        "multi_token"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "Found in TRENCHES-SOL TOP4 and EMC-SOL TOP2. Funded from Crodie wallet."
+    },
+    {
+      "name": "Tefs Smart Money",
+      "address": "555CVoLLYrmo6KREkqrtpCeBBk2WjmYpYMjbQWvygCqF",
+      "category": "smart_money",
+      "type": "degen",
+      "tags": [
+        "tefs_funded",
+        "multi_token"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "Found in TRENCHES-SOL TOP9 (+$67.60 realized) and EMC-SOL TOP4 (+$32.04). Funded from tefsDGYz1."
+    },
+    {
+      "name": "Askojg Smart Money",
+      "address": "5aLY85pyxiuX3fd4RgM3Yc1e3MAL6b7UgaZz6MS3JUfG",
+      "category": "smart_money",
+      "type": "degen",
+      "tags": [
+        "askojg_funded",
+        "multi_token"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "Found in TRENCHES-SOL TOP5 (+$5.05 realized) and EMC-SOL TOP7 (+$11.98). Funded from Askojg."
+    },
+    {
+      "name": "Max1pq1 Smart Money",
+      "address": "73DeqP8f7Eh6YfmC6CbvMDzzPKku3eaXAk7qtWmoqWDg",
+      "category": "smart_money",
+      "type": "degen",
+      "tags": [
+        "max1pq1_funded",
+        "multi_token"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "Found in TRENCHES-SOL TOP7 (+$32.72 realized) and drooling-SOL TOP7 (+$122.18). Funded from max1pq1."
+    },
+    {
+      "name": "Ethan Prosper (KOL)",
+      "address": "sAdNbe1cKNMDqDsa4npB3TfL62T14uAo2MsUQfLvzLT",
+      "category": "kol",
+      "type": "degen",
+      "tags": [
+        "kol",
+        "axiom",
+        "gmgn",
+        "twitter_pr6spr"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "KOL \u2014 Twitter @pr6spr. Smart_degen+kol. Found in EMC-SOL TOP6. Realized profit +$857."
+    },
+    {
+      "name": "Abiii (KOL)",
+      "address": "5D6UYcnKqSHhYZUcezDaykATzu573bRM2QRurEUqQJp6",
+      "category": "kol",
+      "type": "degen",
+      "tags": [
+        "kol",
+        "pump_smart",
+        "pepeboost",
+        "twitter_abiiii0203"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "KOL \u2014 Twitter @abiiii0203. Kol+pump_smart+pepeboost. Found in drooling-SOL TOP6."
+    },
+    {
+      "name": "Tendychallenge Wallet",
+      "address": "7d2YoZjq2BLvNDbuFxLhKPkvsNNTmgPVpCnXJBA3HLJP",
+      "category": "smart_money",
+      "type": "whale",
+      "tags": [
+        "tendychallenge_funded",
+        "top_holder"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "drooling-SOL TOP1. Realized +$9,463. Funded from Tendychallenge. Top holder + bundler tag."
+    },
+    {
+      "name": "Binance Sniper",
+      "address": "8FiuwM6FmVKmBLCaJ6QcNScnVw4NuNs7Tt4Skf91saF8",
+      "category": "smart_money",
+      "type": "degen",
+      "tags": [
+        "binance_funded",
+        "axiom",
+        "padre"
+      ],
+      "addedAt": "2026-06-22T00:00:00.000Z",
+      "notes": "TRENCHES-SOL TOP8. Funded from Binance. Tags: smart_degen+axiom+padre."
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+research_task:
+  description: >
+    Lakukan riset mendalam tentang {topic}.
+    Dapatkan data spesifik:
+    - Angka dan statistik terbaru (harga, market cap, volume, benchmark)
+    - Nama tokoh, perusahaan, atau proyek terkait
+    - Timeline kejadian
+    - Kontroversi atau angle menarik
+    - Sumber terpercaya (minimal 3 sumber berbeda)
+
+    Fokus: cari angle yang engaging buat thread Twitter.
+  expected_output: >
+    Riset lengkap dengan data spesifik, sumber, dan
+    rekomendasi angle konten dalam format markdown.
+    Minimal 3 paragraf dengan data angka.
+  agent: researcher
+
+writing_task:
+  description: >
+    Buat thread Twitter tentang {topic} berdasarkan hasil riset.
+    Format: 8-12 tweets dengan struktur:
+    - Tweet 1: Hook kuat (bikin penasaran)
+    - Tweet 2-9: Isi dengan data, storytelling, break complex info
+    - Tweet 10-11: Kesimpulan + hot take
+    - Tweet 12: CTA follow + ajak diskusi
+
+    Gaya: Bahasa Indonesia campuran casual-profesional.
+    Natural, kayak ngobrol, bukan report formal.
+    Pake emoji secukupnya. Jangan pake tabel.
+  expected_output: >
+    Thread Twitter lengkap 8-12 tweet dalam format:
+    **1/**
+    konten tweet...
+    
+    **2/**
+    konten tweet...
+    
+    (dst sampai closing)
+    
+    Sertakan 5-8 hashtag relevan di bagian akhir.
+  agent: writer
+  output_file: output/thread_{topic}_{timestamp}.md
+
+review_task:
+  description: >
+    Review thread Twitter yang sudah dibuat tentang {topic}.
+    Periksa:
+    1. Fakta — apakah data akurat? Ada halusinasi?
+    2. Hook — apakah tweet pertama bikin penasaran?
+    3. Alur — apakah story arc jelas?
+    4. Gaya — natural atau kedengeran kaya AI?
+    5. CTA — ada ajakan follow/diskusi di akhir?
+
+    Kalo ada yang salah, KASIH TAU writer untuk direvisi.
+    Kalo udah oke, beri tanda ACC.
+  expected_output: >
+    Hasil review: ACC ✅ atau REVISE ❌ dengan catatan revisi spesifik.
+    Kalo ACC: "Thread siap posting. Topik: {topic}"
+    Kalo REVISE: sebutkan tweet berapa dan apa yang perlu diperbaiki.
+  agent: reviewer

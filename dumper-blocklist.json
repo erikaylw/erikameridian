@@ -1,0 +1,47 @@
+{
+  "aXFFm3oYtXNgFpsAA6ZJbbk5rcBygppgHAxGrj5SP8N": {
+    "label": "BULLWIF dumper #1",
+    "reason": "Top dumper $17,296 — bundler wallet, exited with +$895",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "JDS4crwDBECr35fN2eScU7n4ABhWYA2Q69wSLiMbtf9n": {
+    "label": "BULLWIF dumper #2",
+    "reason": "Top dumper $12,826 — paper_hands, exited with +$1,964",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "DthNkHFMc8cxuuy3D77QA9JG9zFK7xT8e8FXvgRuCbYj": {
+    "label": "BULLWIF dumper #3",
+    "reason": "Top dumper $10,297 — sniper, 6.7x profit +$8,971, exited",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "2qfMwZ41qRLFtBtanxaEpRKoHvJaWEcvFJc4viZkGxUU": {
+    "label": "BULLWIF dumper #4",
+    "reason": "Top dumper $9,951 — profit +$3,082, exited",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "7gGPekyUKzYH3Y6B7mA7grZMwJn3csQDN1dh9VQZJAUy": {
+    "label": "BULLWIF dumper #5",
+    "reason": "Top dumper $8,668 — paper_hands, exited with +$308",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "kEFiAX3jo5NmemysQov342TZ9mGh6yp92GDRjhA8XDf": {
+    "label": "BULLWIF dumper #6",
+    "reason": "Top dumper $8,241 — bundler + sandwich_bot, profit +$469, exited",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "BsZY6Ushge3YJNU9onmyEpSG74ZRo9wbLGg2YV1XGEZa": {
+    "label": "BULLWIF dumper #7",
+    "reason": "Top dumper $8,434 — masih hold sisa $176, profit +$560",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "CEUA7zVoDRqRYoeHTP58UHU6TR8yvtVbeLrX1dppqoXJ": {
+    "label": "BULLWIF bundler",
+    "reason": "Bundler (axiom,gmgn) — sold $6,837, 5x profit +$5,712",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  },
+  "HF2Lw2tYs4B3y1iqz6iw2f4wTjrn14KppvAezcm7TAT3": {
+    "label": "BULLWIF bundler ponilly",
+    "reason": "Bundler (trojan, @ponilly777) — sold $4,239, 4.6x profit +$3,482",
+    "added_at": "2026-06-30T00:00:00.000Z"
+  }
+}

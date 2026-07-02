@@ -1,4 +1,60 @@
 const DATAPI_BASE = "https://datapi.jup.ag/v1";
+const RUGCHECK_BASE = "https://api.rugcheck.xyz/v1";
+
+/**
+ * Fetch RugCheck security report for a token mint.
+ * Returns insider_pct, rug_score (0-100), creator_hold_pct, lp_locked_pct, risks.
+ */
+export async function getRugcheckReport(mint) {
+  try {
+    const [summaryRes, fullRes] = await Promise.all([
+      fetch(`${RUGCHECK_BASE}/tokens/${mint}/report/summary`, { headers: { "User-Agent": "meridian-bot/1.0" } }),
+      fetch(`${RUGCHECK_BASE}/tokens/${mint}/report`,         { headers: { "User-Agent": "meridian-bot/1.0" } }),
+    ]);
+    const summary = summaryRes.ok ? await summaryRes.json() : null;
+    const full    = fullRes.ok    ? await fullRes.json()    : null;
+
+    // Insider % — sum of all top-holder pct where insider === true
+    const topHolders = full?.topHolders ?? [];
+    const insiderPct = topHolders
+      .filter((h) => h.insider === true)
+      .reduce((sum, h) => sum + (h.pct ?? 0), 0);
+
+    // Top-10 holder concentration from RugCheck
+    const top10Pct = topHolders
+      .slice(0, 10)
+      .reduce((sum, h) => sum + (h.pct ?? 0), 0);
+
+    // Dev/creator holding %
+    const creator = full?.creator ?? null;
+    const creatorHolder = creator
+      ? topHolders.find((h) => h.owner === creator || h.address === creator)
+      : null;
+    const creatorHoldPct = creatorHolder?.pct ?? null;
+
+    // Rug score (normalised 0-100, higher = riskier)
+    const rugScore = summary?.score_normalised ?? null;
+
+    // Risk flags
+    const risks = (summary?.risks ?? []).map((r) => ({
+      name:  r.name,
+      level: r.level,   // warn | danger
+      score: r.score,
+    }));
+
+    return {
+      mint,
+      rug_score:        rugScore,               // 0-100, higher = riskier
+      insider_pct:      parseFloat(insiderPct.toFixed(2)),
+      top10_pct:        parseFloat(top10Pct.toFixed(2)),
+      creator_hold_pct: creatorHoldPct != null ? parseFloat(creatorHoldPct.toFixed(2)) : null,
+      lp_locked_pct:    summary?.lpLockedPct ?? null,
+      risks,
+    };
+  } catch {
+    return null; // non-fatal — don't block screening on RugCheck failure
+  }
+}
 
 /**
  * Get the narrative/story behind a token from Jupiter ChainInsight.

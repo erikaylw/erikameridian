@@ -10,6 +10,8 @@
 
 import fs from "fs";
 import { log } from "./logger.js";
+import { setManualCloseCooldown } from "./pool-memory.js";
+import { config } from "./config.js";
 
 const STATE_FILE = "./state.json";
 
@@ -57,6 +59,7 @@ export function trackPosition({
   position,
   pool,
   pool_name,
+  base_mint = null,
   strategy,
   bin_range = {},
   amount_sol,
@@ -74,6 +77,7 @@ export function trackPosition({
     position,
     pool,
     pool_name,
+    base_mint,
     strategy,
     bin_range,
     amount_sol,
@@ -183,29 +187,23 @@ export function recordClose(position_address, reason) {
   if (!pos) return;
   pos.closed = true;
   pos.closed_at = new Date().toISOString();
+  pos.close_reason = reason;
   pos.notes.push(`Closed at ${pos.closed_at}: ${reason}`);
   pushEvent(state, { action: "close", position: position_address, pool_name: pos.pool_name || pos.pool, reason });
+
+  const closeText = String(reason || "").toLowerCase();
+  const weakClose = /out[-_ ]?of[-_ ]?range|\boor\b|low[ -]?yield|volume[ -]?(dead|dry|drying)|fee\/?tvl|yield/.test(closeText);
+  const cooldownHours = weakClose
+    ? (config.management.weakCloseCooldownHours ?? 24)
+    : (config.management.poolCloseCooldownHours ?? config.management.manualCloseCooldownHours ?? 6);
+  try {
+    setManualCloseCooldown(pos.pool, pos.base_mint || null, cooldownHours, weakClose ? `weak close: ${reason}` : `closed: ${reason}`);
+  } catch (e) {
+    log("state_warn", `Failed to set close cooldown for ${position_address}: ${e.message}`);
+  }
+
   save(state);
   log("state", `Position ${position_address} marked closed: ${reason}`);
-}
-
-/**
- * Record a rebalance (close + redeploy).
- */
-export function recordRebalance(old_position, new_position) {
-  const state = load();
-  const old = state.positions[old_position];
-  if (old) {
-    old.closed = true;
-    old.closed_at = new Date().toISOString();
-    old.notes.push(`Rebalanced into ${new_position} at ${old.closed_at}`);
-  }
-  const newPos = state.positions[new_position];
-  if (newPos) {
-    newPos.rebalance_count = (old?.rebalance_count || 0) + 1;
-    newPos.notes.push(`Rebalanced from ${old_position}`);
-  }
-  save(state);
 }
 
 /**
@@ -222,7 +220,7 @@ export function setPositionInstruction(position_address, instruction) {
   return true;
 }
 
-export function queuePeakConfirmation(position_address, candidatePnlPct) {
+export function queuePeakConfirmation(position_address, candidatePnlPct, options = {}) {
   if (candidatePnlPct == null) return false;
   const state = load();
   const pos = state.positions[position_address];
@@ -230,6 +228,15 @@ export function queuePeakConfirmation(position_address, candidatePnlPct) {
 
   const currentPeak = pos.peak_pnl_pct ?? 0;
   if (candidatePnlPct <= currentPeak) return false;
+
+  if (options.immediate) {
+    pos.peak_pnl_pct = candidatePnlPct;
+    pos.pending_peak_pnl_pct = null;
+    pos.pending_peak_started_at = null;
+    save(state);
+    log("state", `Position ${position_address} peak PnL accepted at ${candidatePnlPct.toFixed(2)}% from relay poll`);
+    return true;
+  }
 
   const changed =
     pos.pending_peak_pnl_pct == null ||
@@ -321,15 +328,6 @@ export function resolvePendingTrailingDrop(position_address, currentPnlPct, trai
   save(state);
   log("state", `Position ${position_address} rejected trailing drop after 15s recheck (pending current: ${pendingCurrent.toFixed(2)}%, current: ${currentPnlPct ?? "?"}%)`);
   return { confirmed: false, rejected: true };
-}
-
-/**
- * Get all tracked positions (optionally filter open-only).
- */
-export function getTrackedPositions(openOnly = false) {
-  const state = load();
-  const all = Object.values(state.positions);
-  return openOnly ? all.filter((p) => !p.closed) : all;
 }
 
 /**
@@ -442,6 +440,20 @@ export function updatePnlAndCheckExits(position_address, positionData, mgmtConfi
     }
   }
 
+  // ── Fast OOR cutloss ───────────────────────────────────────────
+  // If OOR and loss exceeds threshold within the early window, close immediately
+  if (pos.out_of_range_since && !pnl_pct_suspicious && currentPnlPct != null) {
+    const minutesOOR = Math.floor((Date.now() - new Date(pos.out_of_range_since).getTime()) / 60000);
+    const cutlossWindow = mgmtConfig.fastOorCutlossMinutes ?? 10;
+    const cutlossPct = mgmtConfig.fastOorCutlossPct ?? -10;
+    if (minutesOOR <= cutlossWindow && currentPnlPct <= cutlossPct) {
+      return {
+        action: "FAST_OOR_CUTLOSS",
+        reason: `Fast OOR cutloss: OOR ${minutesOOR}m, PnL ${currentPnlPct.toFixed(2)}% ≤ ${cutlossPct}% within ${cutlossWindow}m window`,
+      };
+    }
+  }
+
   // ── Out of range too long ──────────────────────────────────────
   if (pos.out_of_range_since) {
     const minutesOOR = Math.floor((Date.now() - new Date(pos.out_of_range_since).getTime()) / 60000);
@@ -514,9 +526,19 @@ export function syncOpenPositions(active_addresses) {
 
     pos.closed = true;
     pos.closed_at = new Date().toISOString();
-    pos.notes.push(`Auto-closed during state sync (not found on-chain)`);
+    pos.close_source = "sync_missing_on_chain";
+    pos.close_reason = "sync_missing_on_chain";
+    pos.notes.push(`Auto-closed during state sync (missing from on-chain list after grace period; likely manual/force close or API indexing gap)`);
     changed = true;
-    log("state", `Position ${posId} auto-closed (missing from on-chain data)`);
+    log("state", `Position ${posId} auto-closed by sync_missing_on_chain (not found on-chain after grace period)`);
+
+    // Set cooldown so the bot doesn't redeploy into this token for N hours
+    const cooldownHours = config.management.manualCloseCooldownHours ?? 2;
+    try {
+      setManualCloseCooldown(pos.pool, pos.base_mint || null, cooldownHours, "sync_missing_on_chain");
+    } catch (e) {
+      log("state_warn", `Failed to set manual close cooldown for ${posId}: ${e.message}`);
+    }
   }
 
   if (changed) save(state);

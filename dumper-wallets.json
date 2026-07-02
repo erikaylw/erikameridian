@@ -1,0 +1,58 @@
+{
+  "wallets": [
+    {
+      "address": "AcoNeFQsTPYs7ZrH8RMWaxxGJTTQJJ4H5aTXmptaz5UK",
+      "tag": "bundler_axiom",
+      "reason": "GTAVI TOP3 bundler wallet — sold 8.96M GTAVI tokens, realized profit +$1,742",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "65eY9uU5ttmBGHjUiNxmpHAsadCTda2A3fsRo6NbUqSj",
+      "tag": "bundler_axiom",
+      "reason": "GTAVI TOP4 bundler wallet — sold 17.76M GTAVI tokens, massive dump",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "GGD3MXGS9YEoESei7dboUdFR5JCZmHnUTtpN4gVRYC6i",
+      "tag": "bundler",
+      "reason": "GTAVI TOP6 bundler wallet — sold 3.79M GTAVI tokens, realized profit +$5,218",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "2Usn2B9f9kvhNMEE2VRVs16YFAwvzkboEJeXMPvLVFBL",
+      "tag": "gmgn_trader",
+      "reason": "GTAVI TOP23 — sold 8.28M GTAVI tokens, dumped during position",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "47NbVSaYgCf9UfTLG41a2s4Bm3MmrkP1syUnGfzDT2J2",
+      "tag": "bundler",
+      "reason": "GTAVI TOP27 bundler wallet — sold 3.5M GTAVI tokens",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "7WtRpq5Dbujd13N3cfz8b9ohhNyARncdBWioVVMXczTq",
+      "tag": "axiom",
+      "reason": "GTAVI TOP28 — sold 4.79M GTAVI tokens, tagged axiom",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "Axn1UCBZtw9kJTTEwGrpPCwZtkpCDkW7Z7UHoqdsL5Wt",
+      "tag": "heavy_seller",
+      "reason": "GTAVI TOP24 — sold 6.5M GTAVI tokens",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "7AMjKr56mSBES1ENU8yaCEXtHApZFVBb69H8tdgBCxfb",
+      "tag": "fomo_seller",
+      "reason": "GTAVI TOP22 — sold 1.7M GTAVI tokens, tagged fomo",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    },
+    {
+      "address": "AyosUDBqYQRRSgVABpi7wc9EjBzy3uzGPXMjXGR89yMF",
+      "tag": "heavy_seller",
+      "reason": "GTAVI TOP29 — sold 7.6M GTAVI tokens",
+      "added_at": "2026-06-25T14:30:00.000Z"
+    }
+  ]
+}

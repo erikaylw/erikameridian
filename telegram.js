@@ -8,7 +8,7 @@ const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
 const BASE  = TOKEN ? `https://api.telegram.org/bot${TOKEN}` : null;
-const ALLOWED_USER_IDS = new Set(
+let ALLOWED_USER_IDS = new Set(
   String(process.env.TELEGRAM_ALLOWED_USER_IDS || "")
     .split(",")
     .map((id) => id.trim())
@@ -29,7 +29,9 @@ function loadChatId() {
       const cfg = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"));
       if (cfg.telegramChatId) chatId = cfg.telegramChatId;
     }
-  } catch { /**/ }
+  } catch (error) {
+    log("telegram_warn", `Invalid user-config.json; chatId not loaded: ${error.message}`);
+  }
 }
 
 function saveChatId(id) {
@@ -44,7 +46,34 @@ function saveChatId(id) {
   }
 }
 
+function loadAllowedUserIds() {
+  try {
+    if (fs.existsSync(USER_CONFIG_PATH)) {
+      const cfg = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"));
+      const ids = cfg.telegramAllowedUserIds;
+      if (Array.isArray(ids) && ids.length > 0) {
+        for (const id of ids) ALLOWED_USER_IDS.add(String(id).trim());
+      }
+    }
+  } catch (error) {
+    log("telegram_warn", `Failed to load allowed user IDs: ${error.message}`);
+  }
+}
+
+function saveAllowedUserIds() {
+  try {
+    let cfg = fs.existsSync(USER_CONFIG_PATH)
+      ? JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"))
+      : {};
+    cfg.telegramAllowedUserIds = [...ALLOWED_USER_IDS];
+    fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  } catch (e) {
+    log("telegram_error", `Failed to persist allowed user IDs: ${e.message}`);
+  }
+}
+
 loadChatId();
+loadAllowedUserIds();
 
 function isAuthorizedIncomingMessage(msg) {
   const incomingChatId = String(msg.chat?.id || "");
@@ -111,7 +140,37 @@ export async function sendHTML(html) {
   return postTelegram("sendMessage", { text: html.slice(0, 4096), parse_mode: "HTML" });
 }
 
-export async function editMessage(text, messageId) {
+// ─── Whitelist management ────────────────────────────────────
+export function getWhitelist() {
+  return [...ALLOWED_USER_IDS];
+}
+
+export function addWhitelist(id) {
+  const strId = String(id).trim();
+  if (!strId) return { success: false, reason: "ID kosong" };
+  if (ALLOWED_USER_IDS.has(strId)) return { success: false, reason: "ID sudah terdaftar" };
+  ALLOWED_USER_IDS.add(strId);
+  saveAllowedUserIds();
+  return { success: true, action: "added", id: strId };
+}
+
+export function removeWhitelist(id) {
+  const strId = String(id).trim();
+  if (!strId) return { success: false, reason: "ID kosong" };
+  if (!ALLOWED_USER_IDS.has(strId)) return { success: false, reason: "ID tidak ditemukan" };
+  ALLOWED_USER_IDS.delete(strId);
+  saveAllowedUserIds();
+  return { success: true, action: "removed", id: strId };
+}
+
+export function clearWhitelist() {
+  const count = ALLOWED_USER_IDS.size;
+  ALLOWED_USER_IDS.clear();
+  saveAllowedUserIds();
+  return { success: true, action: "cleared", count };
+}
+
+async function editMessage(text, messageId) {
   if (!TOKEN || !chatId || !messageId) return null;
   return postTelegram("editMessageText", {
     message_id: messageId,
@@ -119,7 +178,7 @@ export async function editMessage(text, messageId) {
   });
 }
 
-export function hasActiveLiveMessage() {
+function hasActiveLiveMessage() {
   return _liveMessageDepth > 0;
 }
 
@@ -375,11 +434,23 @@ export async function notifySwap({ inputSymbol, outputSymbol, amountIn, amountOu
   );
 }
 
-export async function notifyOutOfRange({ pair, minutesOOR }) {
+export async function notifyOutOfRange({ pair, minutesOOR, lowerBin, upperBin, activeBin, pnlPct }) {
   if (hasActiveLiveMessage()) return;
+  let rangeBar = "";
+  if (lowerBin != null && upperBin != null && activeBin != null && upperBin > lowerBin) {
+    const BAR_LEN = 20;
+    const pct = Math.max(0, Math.min(100, ((activeBin - lowerBin) / (upperBin - lowerBin)) * 100));
+    const filled = Math.round((pct / 100) * BAR_LEN);
+    const bar = "█".repeat(filled) + "░".repeat(BAR_LEN - filled);
+    const label = activeBin > upperBin ? "▶ above range" : activeBin < lowerBin ? "◀ below range" : `${Math.round(pct)}%`;
+    rangeBar = `\n[${bar}] ${label}`;
+  }
+  const pnlStr = pnlPct != null ? `\nPnL: ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%` : "";
   await sendHTML(
     `⚠️ <b>Out of Range</b> ${pair}\n` +
-    `Been OOR for ${minutesOOR} minutes`
+    `OOR ${minutesOOR} minutes` +
+    pnlStr +
+    rangeBar
   );
 }
 

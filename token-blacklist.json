@@ -1,0 +1,38 @@
+{
+  "So11111111111111111111111111111111111111112": {
+    "symbol": "USDC",
+    "reason": "USDC is a stablecoin; not suitable for DLMM LPing as it does not provide fee yield and can cause impermanent loss.",
+    "added_at": "2026-03-30T13:49:50.667Z",
+    "added_by": "agent"
+  },
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": {
+    "symbol": "USDC",
+    "reason": "USDC is a stablecoin; not suitable for DLMM LPing as it does not provide fee yield and can cause impermanent loss.",
+    "added_at": "2026-03-30T13:49:50.668Z",
+    "added_by": "agent"
+  },
+  "AnAVK1B3ZQRcUVriqLNTYFZ32PgJUSDDvJmT4WdXpump": {
+    "symbol": "pumphouse",
+    "reason": "mcap=$125.6k < $150k hard gate + 1h price drop -38.87% — high risk of slow rug despite dev_sold_all and smart_money_buy signals",
+    "added_at": "2026-04-13T18:04:24.907Z",
+    "added_by": "agent"
+  },
+  "EpVHyKK8oxcLmp2C2NhAos1oDxgBNriw3wSLSozYpump": {
+    "symbol": "GTAVI",
+    "reason": "Loss -$6.31 (-9.66%) — bundler wallets dumped during position, high bot holders (29-32%), fee/TVL 0.65% terlalu rendah untuk 40-bin range. Blacklisted to prevent re-deploy.",
+    "added_at": "2026-06-25T14:30:00.000Z",
+    "added_by": "erika"
+  },
+  "J4Y92jy5Lr9ho1aV41bhguytnzBbsPhZJahmaVszpump": {
+    "symbol": "FRAG",
+    "reason": "Loss -$24.34 (-33%) dalam 4 menit. Volatilitas 35.28 — jelas ada whale dump. Blacklist untuk proteksi.",
+    "added_at": "2026-06-29T23:15:59.529Z",
+    "added_by": "agent"
+  },
+  "FMqh9mqR6drPZqqW6wPqLHxX4rqNDWGhYLaMfoaJpump": {
+    "symbol": "world",
+    "reason": "Loss -$7.13 (-10.42%) — deploy 10x ke pool ini, selalu rugi. Volume tidak konsisten, harga sering crash. Blacklist agar tidak dideploy lagi.",
+    "added_at": "2026-06-29T23:16:04.533Z",
+    "added_by": "agent"
+  }
+}

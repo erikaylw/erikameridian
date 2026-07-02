@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<style>
+@page { size: A4; margin: 1.5cm; }
+body { font-family: 'Noto Sans', 'Noto Sans SC', sans-serif; font-size: 10pt; color: #1a1a1a; line-height: 1.5; }
+
+h1 { font-size: 16pt; text-align: center; color: #1a5276; margin-bottom: 2px; }
+h2 { font-size: 12pt; color: #1a5276; border-bottom: 2px solid #2980b9; padding-bottom: 3px; margin-top: 16px; margin-bottom: 8px; }
+h3 { font-size: 11pt; color: #2c3e50; margin-top: 10px; margin-bottom: 5px; }
+
+.cn { color: #7f8c8d; font-size: 9pt; }
+
+/* Grid untuk struktur organisasi */
+.org-chart { text-align: center; margin: 10px auto; }
+.org-box { display: inline-block; border: 1.5px solid #2980b9; border-radius: 6px; padding: 5px 14px; margin: 3px; background: #ebf5fb; font-size: 10pt; font-weight: bold; }
+.org-box.cn-box { background: #fef9e7; border-color: #f39c12; }
+.org-row { margin: 4px 0; }
+.org-arrow { font-size: 14pt; color: #7f8c8d; }
+.level-label { font-size: 8pt; color: #95a5a6; display: block; }
+
+/* Divisi card */
+.divisi-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.divisi-card { flex: 1 1 45%; border: 1px solid #bdc3c7; border-radius: 6px; padding: 8px 10px; background: #fafafa; }
+.divisi-card h3 { margin: 0 0 4px 0; font-size: 10.5pt; color: #1a5276; }
+.divisi-card .cn { font-size: 8.5pt; }
+.divisi-card ul { margin: 2px 0; padding-left: 14px; }
+.divisi-card li { margin: 1px 0; font-size: 9pt; }
+
+/* KPI tables */
+table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 8.5pt; }
+th { background: #2980b9; color: white; padding: 4px 6px; text-align: left; font-weight: bold; }
+td { padding: 3px 6px; border-bottom: 1px solid #e0e0e0; }
+tr:nth-child(even) { background: #f8f9fa; }
+.cn-col { background: #fef9e7; }
+
+/* Alur flow */
+.flow { background: #f0f4f8; border-left: 3px solid #2980b9; padding: 8px 12px; margin: 6px 0; font-size: 9pt; }
+.flow-step { margin: 4px 0; }
+.flow-step strong { color: #1a5276; }
+.flow-arrow { color: #7f8c8d; text-align: center; }
+
+/* Footer */
+.footer { text-align: center; font-size: 8pt; color: #95a5a6; margin-top: 20px; border-top: 1px solid #ddd; padding-top: 6px; }
+
+.page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>STRUKTUR ORGANISASI & KONTROL DIVISI</h1>
+<h1 style="font-size:13pt; margin-top:0; color:#7f8c8d;">組織結構與部門控制流程</h1>
+<p style="text-align:center; font-size:9pt; color:#7f8c8d; margin-top:0;">
+Koperasi Simpan Pinjam TKW Taiwan<br>
+<span class="cn">台灣印尼移工儲蓄貸款合作社</span>
+</p>
+
+<!-- ===== STRUKTUR ORGANISASI ===== -->
+<h2>1. STRUKTUR ORGANISASI <span class="cn">(組織結構)</span></h2>
+
+<div class="org-chart">
+  <div class="org-row"><div class="org-box">Rapat Anggota<br><span class="level-label">會員大會</span></div></div>
+  <div class="org-arrow">&#8964;</div>
+  <div class="org-row">
+    <div class="org-box">Pengurus<br><span class="level-label">理事會</span></div>
+    <div class="org-box cn-box">Pengawas<br><span class="level-label">監事會</span></div>
+  </div>
+  <div class="org-arrow">&#8964;</div>
+  <div class="org-row"><div class="org-box">Manajer / 經理</div></div>
+  <div class="org-arrow">&#8964;</div>
+  <div class="org-row">
+    <div class="org-box">Marketing<br><span class="cn" style="font-size:8pt;">行銷部</span></div>
+    <div class="org-box">Checking<br><span class="cn" style="font-size:8pt;">審核部</span></div>
+    <div class="org-box">Keuangan & Akuntansi<br><span class="cn" style="font-size:8pt;">財務會計部</span></div>
+    <div class="org-box">Penagihan<br><span class="cn" style="font-size:8pt;">催收部</span></div>
+  </div>
+</div>
+
+<!-- ===== DIVISI & TUGAS ===== -->
+<h2>2. TUGAS POKOK PER DIVISI <span class="cn">(各部門主要職責)</span></h2>
+
+<div class="divisi-grid">
+  <div class="divisi-card">
+    <h3>Marketing / 行銷部</h3>
+    <ul>
+      <li>Akuisisi anggota baru melalui grup LINE/WhatsApp</li>
+      <li>Kumpulkan dokumen aplikasi pinjaman</li>
+      <li>Buat Memo Awal untuk Checking</li>
+      <li>Jaga hubungan dengan agen/majikan di Taiwan</li>
+      <li>Field visit ke TKW secara berkala</li>
+    </ul>
+  </div>
+  <div class="divisi-card">
+    <h3>Checking & Administrasi / 審核部</h3>
+    <ul>
+      <li>Verifikasi dokumen asli vs fotokopi</li>
+      <li>Cek histori pinjaman & BI Checking</li>
+      <li>Analisa 5C: Character, Capacity, Capital, Collateral, Condition</li>
+      <li>Hitung plafon maksimal (angsuran max 40% gaji)</li>
+      <li>Buat Surat Keputusan Kredit (SK-Kredit)</li>
+    </ul>
+  </div>
+  <div class="divisi-card">
+    <h3>Keuangan & Akuntansi / 財務會計部</h3>
+    <ul>
+      <li>Pembukuan harian: jurnal, buku besar, GL</li>
+      <li>Pencairan dana pinjaman (transfer)</li>
+      <li>Rekonsiliasi bank & kas mingguan</li>
+      <li>Laporan keuangan bulanan (Neraca, LR, AR)</li>
+      <li>Kepatuhan pajak: PPh 21/23/4(2), PPN</li>
+    </ul>
+  </div>
+  <div class="divisi-card">
+    <h3>Penagihan / 催收部</h3>
+    <ul>
+      <li>Catat jadwal angsuran & jatuh tempo</li>
+      <li>Kirim reminder H-3 via LINE/WhatsApp</li>
+      <li>Penagihan bertahap: SP1, SP2, SP3</li>
+      <li>Restrukturisasi pinjaman jika perlu</li>
+      <li>Recovery pinjaman macet</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== ALUR KONTROL ===== -->
+<h2>3. ALUR KONTROL DIVISI <span class="cn">(部門控制流程)</span></h2>
+
+<h3>3.1. Alur Pinjaman <span class="cn">(貸款流程)</span></h3>
+
+<div class="flow">
+  <div class="flow-step"><strong>TAHAP 1 — MARKETING</strong> <span class="cn">行銷部</span></div>
+  <div class="flow-step">Promosi ke TKW via LINE/WhatsApp &rarr; Isi formulir &rarr; Kumpulkan dokumen (KTP, Passport, Visa, Kontrak Kerja, Slip Gaji) &rarr; Buat Memo Awal</div>
+  <div class="flow-step"><em>Target: &le; 1 hari kerja</em></div>
+  <div class="flow-arrow">&darr;</div>
+  
+  <div class="flow-step"><strong>TAHAP 2 — CHECKING</strong> <span class="cn">審核部</span></div>
+  <div class="flow-step">Input data ke sistem &rarr; Verifikasi dokumen &rarr; Cek histori & BI Checking &rarr; Analisa 5C &rarr; Hitung plafon maks (angsuran &le; 40% gaji, tenor &le; sisa kontrak)</div>
+  <div class="flow-step"><em>Target: &le; 3 hari kerja</em></div>
+  <div class="flow-arrow">&darr;</div>
+  
+  <div class="flow-step"><strong>TAHAP 3 — KEPUTUSAN KREDIT</strong> <span class="cn">核貸決定</span></div>
+  <div class="flow-step">&le; Rp5jt: Manajer | Rp5&#8211;15jt: Manajer + Pengurus | &ge; Rp15jt: Rapat Pengurus</div>
+  <div class="flow-step">Jika ditolak: Marketing informasikan. Jika disetujui: Kirim SK-Kredit ke Keuangan</div>
+  <div class="flow-step"><em>Target: &le; 1 hari kerja</em></div>
+  <div class="flow-arrow">&darr;</div>
+  
+  <div class="flow-step"><strong>TAHAP 4 — KEUANGAN</strong> <span class="cn">財務部</span></div>
+  <div class="flow-step">Cek SK-Kredit & dokumen &rarr; Jurnal pencairan &rarr; Transfer ke rekening Taiwan/Indonesia &rarr; Simpan bukti transfer + tanda tangan</div>
+  <div class="flow-step"><em>Target: &le; 1 hari kerja setelah SK-Kredit</em></div>
+  <div class="flow-arrow">&darr;</div>
+  
+  <div class="flow-step"><strong>TAHAP 5 — PENAGIHAN</strong> <span class="cn">催收部</span></div>
+  <div class="flow-step">Catat jatuh tempo &rarr; H-3 reminder LINE/WA &rarr; H+1 telpon &rarr; H+7 SP1 &rarr; H+14 SP2 + hubungi keluarga &rarr; H+30 SP3 / restrukturisasi</div>
+  <div class="flow-step"><em>Target Collection Rate: &ge; 95% bulanan</em></div>
+</div>
+
+<h3>3.2. Kontrol Segregasi Tugas <span class="cn">(職務分離控制)</span></h3>
+
+<table>
+<tr><th>Fungsi</th><th>Pemisahan</th><th class="cn-col">職務分離</th></tr>
+<tr><td>Marketing</td><td>TIDAK boleh merangkap sebagai verifikator (Checking)</td><td class="cn-col">行銷不得兼任審核</td></tr>
+<tr><td>Checking</td><td>TIDAK boleh melakukan pencairan dana</td><td class="cn-col">審核不得兼任撥款</td></tr>
+<tr><td>Akuntansi</td><td>TIDAK boleh merangkap sebagai kasir / pemegang kas</td><td class="cn-col">會計不得兼任出納</td></tr>
+<tr><td>Penagihan</td><td>TIDAK boleh merangkap sebagai pembukuan</td><td class="cn-col">催收不得兼任記帳</td></tr>
+</table>
+
+<h3>3.3. Dual Control (Four Eyes) <span class="cn">(雙重控制)</span></h3>
+
+<table>
+<tr><th>Transaksi</th><th>Approval 1</th><th>Approval 2</th><th class="cn-col">雙重簽核</th></tr>
+<tr><td>Pencairan &gt; Rp5jt</td><td>Manajer</td><td>Pengurus</td><td class="cn-col">經理 + 理事</td></tr>
+<tr><td>Biaya operasi &gt; Rp1jt</td><td>Manajer</td><td>Pengawas</td><td class="cn-col">經理 + 監事</td></tr>
+<tr><td>Hapus buku piutang</td><td>Pengurus</td><td>Pengawas</td><td class="cn-col">理事 + 監事</td></tr>
+</table>
+
+<!-- ===== KPI ===== -->
+<div class="page-break"></div>
+
+<h2>4. INDIKATOR KINERJA (KPI) <span class="cn">(績效指標)</span></h2>
+
+<h3>Marketing / 行銷部</h3>
+<table>
+<tr><th>KPI</th><th>Target</th><th class="cn-col">績效指標</th><th>Target</th></tr>
+<tr><td>Anggota baru</td><td>&ge; 20 org/bln</td><td class="cn-col">新會員數</td><td>每月 20 人</td></tr>
+<tr><td>Realisasi pinjaman</td><td>&ge; Rp200jt/bln</td><td class="cn-col">貸款實現金額</td><td>每月 2 億</td></tr>
+<tr><td>Conversion rate</td><td>&ge; 60%</td><td class="cn-col">轉換率</td><td>60%</td></tr>
+<tr><td>Response time inquiry</td><td>&le; 2 jam</td><td class="cn-col">回覆時間</td><td>2 小時內</td></tr>
+<tr><td>NPL portofolio sendiri</td><td>&le; 3%</td><td class="cn-col">壞帳率</td><td>3% 以下</td></tr>
+</table>
+
+<h3>Checking / 審核部</h3>
+<table>
+<tr><th>KPI</th><th>Target</th><th class="cn-col">績效指標</th><th>Target</th></tr>
+<tr><td>TAT verifikasi</td><td>&le; 3 hari</td><td class="cn-col">審核時間</td><td>3 天內</td></tr>
+<tr><td>Akurasi data entry</td><td>&ge; 99%</td><td class="cn-col">資料輸入準確率</td><td>99%</td></tr>
+<tr><td>Kelengkapan berkas</td><td>100%</td><td class="cn-col">文件完整性</td><td>100%</td></tr>
+<tr><td>Error rate plafon</td><td>&le; 2%</td><td class="cn-col">額度錯誤率</td><td>2% 以下</td></tr>
+</table>
+
+<h3>Keuangan & Akuntansi / 財務會計部</h3>
+<table>
+<tr><th>KPI</th><th>Target</th><th class="cn-col">績效指標</th><th>Target</th></tr>
+<tr><td>Laporan harian</td><td>selesai jam 10:00</td><td class="cn-col">每日報表</td><td>上午 10 點前</td></tr>
+<tr><td>Selisih kas/bank</td><td>0 / 100%</td><td class="cn-col">現金銀行差異</td><td>零差異</td></tr>
+<tr><td>Rekonsiliasi bank</td><td>&le; H+5</td><td class="cn-col">銀行對帳</td><td>5 天內</td></tr>
+<tr><td>Laporan bulanan</td><td>&le; H+7</td><td class="cn-col">月報</td><td>7 天內</td></tr>
+<tr><td>Kepatuhan pajak</td><td>100% tepat waktu</td><td class="cn-col">稅務合規</td><td>100%</td></tr>
+</table>
+
+<h3>Penagihan / 催收部</h3>
+<table>
+<tr><th>KPI</th><th>Target</th><th class="cn-col">績效指標</th><th>Target</th></tr>
+<tr><td>Collection rate</td><td>&ge; 95%</td><td class="cn-col">收款率</td><td>95% 以上</td></tr>
+<tr><td>NPL (&gt; 90 hari)</td><td>&le; 5%</td><td class="cn-col">逾期放款率</td><td>5% 以下</td></tr>
+<tr><td>PAR 30</td><td>&le; 10%</td><td class="cn-col">逾期 30 天比率</td><td>10% 以下</td></tr>
+<tr><td>Recovery rate</td><td>&ge; 60%</td><td class="cn-col">回收率</td><td>60% 以上</td></tr>
+<tr><td>SP1 terkirim</td><td>H+7 maks</td><td class="cn-col">催繳通知</td><td>逾期 7 天內</td></tr>
+</table>
+
+<!-- ===== PENCAPAIAN TARGET ===== -->
+<h2>5. PENCAPAIAN TARGET <span class="cn">(達成目標)</span></h2>
+
+<div class="flow">
+  <div class="flow-step"><strong>Target Utama Koperasi:</strong></div>
+  <div class="flow-step">1. NPL &le; 5% &mdash; melalui kontrol ketat checking + penagihan disiplin</div>
+  <div class="flow-step">2. Collection rate &ge; 95% &mdash; reminder terjadwal + follow up bertahap</div>
+  <div class="flow-step">3. Pertumbuhan portofolio &ge; 20% per tahun &mdash; via marketing aktif</div>
+  <div class="flow-step">4. Laporan keuangan akurat & tepat waktu &mdash; rekonsiliasi harian + audit trail</div>
+  <div class="flow-step">5. Kepatuhan pajak 100% &mdash; jadwal setor dan lapor terintegrasi</div>
+  <br>
+  <div class="flow-step"><strong>Roda kontrol (control wheel):</strong></div>
+  <div class="flow-step">Marketing (akuisi) &rarr; Checking (verifikasi) &rarr; Keuangan (pencairan + pembukuan) &rarr; Penagihan (pemantauan) &rarr; Marketing (hubungan anggota) &mdash; siklus tertutup dengan audit trail di setiap tahap.</div>
+</div>
+
+<h3>Rekonsiliasi Berkala <span class="cn">(定期對帳)</span></h3>
+<table>
+<tr><th>Rekonsiliasi</th><th>Frekuensi</th><th>Pihak</th><th class="cn-col">對帳項目</th></tr>
+<tr><td>Kas kecil</td><td>Harian</td><td>Akuntansi vs Kasir</td><td class="cn-col">零用金</td></tr>
+<tr><td>Rekening bank</td><td>Mingguan</td><td>Akuntansi vs Bank</td><td class="cn-col">銀行帳戶</td></tr>
+<tr><td>Piutang anggota</td><td>Bulanan</td><td>Akuntansi vs Penagihan vs Marketing</td><td class="cn-col">會員應收帳款</td></tr>
+<tr><td>Buku besar</td><td>Bulanan</td><td>Akuntansi vs Pengawas</td><td class="cn-col">總帳</td></tr>
+</table>
+
+<h3>Checklist Harian Akuntansi <span class="cn">(每日會計檢查表)</span></h3>
+<table>
+<tr><th>No</th><th>Checklist</th><th class="cn-col">檢查項目</th></tr>
+<tr><td>1</td><td>Catat seluruh transaksi hari sebelumnya</td><td class="cn-col">記錄前日所有交易</td></tr>
+<tr><td>2</td><td>Cocokkan saldo kas (buku vs fisik)</td><td class="cn-col">核對現金餘額</td></tr>
+<tr><td>3</td><td>Cocokkan saldo bank (buku vs mutasi)</td><td class="cn-col">核對銀行餘額</td></tr>
+<tr><td>4</td><td>Update daftar piutang (angsuran masuk)</td><td class="cn-col">更新應收帳款</td></tr>
+<tr><td>5</td><td>Rekap setoran penagihan</td><td class="cn-col">彙整催收繳款</td></tr>
+<tr><td>6</td><td>Backup data sistem</td><td class="cn-col">系統資料備份</td></tr>
+</table>
+
+<div class="footer">
+Dokumen ini sebagai referensi operasional koperasi simpan pinjam TKW Taiwan. / 本文件作為台灣印尼移工儲蓄貸款合作社的運營參考文件。
+</div>
+
+</body>
+</html>

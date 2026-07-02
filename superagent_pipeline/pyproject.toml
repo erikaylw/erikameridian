@@ -1,0 +1,11 @@
+[project]
+name = "superagent_pipeline"
+version = "0.1.0"
+description = "Content pipeline: Riset → Tulis → Review buat Twitter/X"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]>=1.14.0",
+]
+
+[project.scripts]
+superagent_pipeline = "superagent_pipeline.main:run"

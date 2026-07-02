@@ -4,6 +4,8 @@ import { isDevBlocked, getBlockedDevs } from "../dev-blocklist.js";
 import { log } from "../logger.js";
 import { isBaseMintOnCooldown, isPoolOnCooldown } from "../pool-memory.js";
 import { confirmIndicatorPreset } from "./chart-indicators.js";
+import { getAgentMeridianBase, getAgentMeridianHeaders } from "./agent-meridian.js";
+import { getRugcheckReport } from "./token.js";
 
 const DATAPI_JUP = "https://datapi.jup.ag/v1";
 
@@ -13,6 +15,14 @@ const PVP_RIVAL_LIMIT = 2;
 const PVP_MIN_ACTIVE_TVL = 5_000;
 const PVP_MIN_HOLDERS = 500;
 const PVP_MIN_GLOBAL_FEES_SOL = 30;
+const SOL_MINT = "So11111111111111111111111111111111111111112";
+
+function isSolQuotePool(pool) {
+  const quoteSymbol = String(pool.quote?.symbol || "").trim().toUpperCase();
+  const quoteMint = pool.quote?.mint || null;
+  return quoteSymbol === "SOL" || quoteMint === SOL_MINT;
+}
+
 
 function normalizeSymbol(symbol) {
   return String(symbol || "").trim().toUpperCase();
@@ -23,12 +33,17 @@ function scoreCandidate(pool) {
   const organic = Number(pool.organic_score || 0);
   const volume = Number(pool.volume_window || 0);
   const holders = Number(pool.holders || 0);
-  return feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+  // Soft bonuses — KOL cluster presence and smart money buy signal
+  // These are 0 before OKX enrichment, so initial sort is unaffected.
+  // A re-sort after enrichment surfaces these pools to the top.
+  const kolBonus        = pool.kol_in_clusters  ? 500 : 0;
+  const smartMoneyBonus = pool.smart_money_buy   ? 300 : 0;
+  return feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100 + kolBonus + smartMoneyBonus;
 }
 
 async function fetchDiscordSignalCandidates() {
-  const res = await fetch(`${config.api.url}/signals/discord/candidates`, {
-    headers: config.api.publicApiKey ? { "x-api-key": config.api.publicApiKey } : {},
+  const res = await fetch(`${getAgentMeridianBase()}/signals/discord/candidates`, {
+    headers: getAgentMeridianHeaders(),
   });
   if (!res.ok) throw new Error(`discord signal candidates ${res.status}`);
   const data = await res.json();
@@ -101,6 +116,53 @@ async function enrichPvpRisk(pools) {
 
 
 
+// bin_step=100, fee_pct ≈ 2% or 3% (tolerance ±0.5)
+const FAST_TRACK_BIN_STEPS = [100];
+const FAST_TRACK_FEE_PCTS  = [2, 3];
+
+/**
+ * Fetch new high-volume pools with relaxed quality filters.
+ * Used for the fast-track path: new pools (< N hours) with specific bin/fee and high volume
+ * bypass the normal holders/organic/mcap requirements.
+ */
+async function fetchFastTrackPools({ maxAgeHours, minVolume }) {
+  const s = config.screening;
+  const ageThreshold = Date.now() - maxAgeHours * 3_600_000;
+
+  const filters = [
+    "base_token_has_critical_warnings=false",
+    "quote_token_has_critical_warnings=false",
+    "pool_type=dlmm",
+    `dlmm_bin_step>=${Math.min(...FAST_TRACK_BIN_STEPS)}`,
+    `dlmm_bin_step<=${Math.max(...FAST_TRACK_BIN_STEPS)}`,
+    `volume>=${minVolume}`,
+    `tvl>=${s.minTvl}`,
+    `base_token_created_at>=${ageThreshold}`,
+  ].join("&&");
+
+  const useServerDiscovery = !!config.api.publicApiKey;
+  const url = useServerDiscovery
+    ? `${getAgentMeridianBase()}/discovery/pools?page_size=20&filter_by=${encodeURIComponent(filters)}&timeframe=${s.timeframe}&category=${s.category}`
+    : `${POOL_DISCOVERY_BASE}/pools?page_size=20&filter_by=${encodeURIComponent(filters)}&timeframe=${s.timeframe}&category=${s.category}`;
+
+  const res = await fetch(url, { headers: useServerDiscovery ? getAgentMeridianHeaders() : {} });
+  if (!res.ok) {
+    log("screening", `Fast-track discovery failed: ${res.status}`);
+    return [];
+  }
+
+  const data = await res.json();
+  const raw = Array.isArray(data.data) ? data.data : [];
+
+  return raw.map(condensePool).filter((p) => {
+    // Enforce exact fee_pct match (±0.5 tolerance for rounding)
+    if (!FAST_TRACK_FEE_PCTS.some((f) => p.fee_pct != null && Math.abs(p.fee_pct - f) <= 0.5)) return false;
+    // Enforce age again in-code (token_age_hours from condensed pool)
+    if (p.token_age_hours != null && p.token_age_hours > maxAgeHours) return false;
+    return true;
+  });
+}
+
 /**
  * Fetch pools from the Meteora Pool Discovery API.
  * Returns condensed data optimized for LLM consumption (saves tokens).
@@ -135,7 +197,7 @@ export async function discoverPools({
 
   const useServerDiscovery = !!config.api.publicApiKey;
   const url = useServerDiscovery
-    ? `${config.api.url}/discovery/pools?` +
+    ? `${getAgentMeridianBase()}/discovery/pools?` +
       `page_size=${page_size}` +
       `&filter_by=${encodeURIComponent(filters)}` +
       `&timeframe=${s.timeframe}` +
@@ -147,9 +209,7 @@ export async function discoverPools({
       `&category=${s.category}`;
 
   const res = await fetch(url, {
-    headers: useServerDiscovery && config.api.publicApiKey
-      ? { "x-api-key": config.api.publicApiKey }
-      : {},
+    headers: useServerDiscovery ? getAgentMeridianHeaders() : {},
   });
 
   if (!res.ok) {
@@ -294,6 +354,24 @@ export async function getTopCandidates({ limit = 10 } = {}) {
         pushFilteredReason(filteredOut, p, "token cooldown active");
         return false;
       }
+      if (config.screening.solQuoteOnly !== false && !isSolQuotePool(p)) {
+        const quote = p.quote?.symbol || p.quote?.mint || "unknown";
+        log("screening", `Filtered non-SOL quote pool ${p.name}: quote=${quote}`);
+        pushFilteredReason(filteredOut, p, `quote ${quote} is not SOL`);
+        return false;
+      }
+      const minRealtimeFeeTvl = config.screening.minRealtimeFeeTvlRatio;
+      if (minRealtimeFeeTvl != null && Number(p.fee_active_tvl_ratio || 0) < minRealtimeFeeTvl) {
+        log("screening", `Filtered weak real-time fee/TVL ${p.name}: ${p.fee_active_tvl_ratio ?? 0}% < ${minRealtimeFeeTvl}%`);
+        pushFilteredReason(filteredOut, p, `real-time fee/TVL ${p.fee_active_tvl_ratio ?? 0}% below ${minRealtimeFeeTvl}% minimum`);
+        return false;
+      }
+      const minVol5m = config.screening.minVolume5m;
+      if (minVol5m != null && (p.volume_window == null || p.volume_window < minVol5m)) {
+        log("screening", `Filtered low 5m volume ${p.name}: $${p.volume_window ?? 0} < $${minVol5m}`);
+        pushFilteredReason(filteredOut, p, `5m volume $${p.volume_window ?? 0} below $${minVol5m} minimum`);
+        return false;
+      }
       return true;
     })
     .sort((a, b) => scoreCandidate(b) - scoreCandidate(a))
@@ -369,6 +447,14 @@ export async function getTopCandidates({ limit = 10 } = {}) {
         eligible[i].top_cluster_hold_pct = clusters[0]?.holding_pct ?? null;
       }
     }
+
+    // Re-rank now that KOL / smart-money signals are populated.
+    // Pools with KOL clusters (+500) or smart money buys (+300) bubble to the top.
+    eligible.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+    const kolCount  = eligible.filter((p) => p.kol_in_clusters).length;
+    const smCount   = eligible.filter((p) => p.smart_money_buy).length;
+    log("screening", `Signal re-rank complete — ${kolCount} KOL pool(s), ${smCount} smart-money pool(s) among ${eligible.length} candidates`);
+
     // Wash trading hard filter — fake volume = misleading fee yield
     eligible.splice(0, eligible.length, ...eligible.filter((p) => {
       if (p.is_wash) {
@@ -378,6 +464,78 @@ export async function getTopCandidates({ limit = 10 } = {}) {
       }
       return true;
     }));
+
+    // ── RugCheck enrichment — insider %, rug score, dev hold ─────────
+    const needsRugcheck = eligible.length > 0 && (
+      config.screening.maxInsiderPct   != null ||
+      config.screening.maxRugRatio     != null ||
+      config.screening.maxDevHoldPct   != null
+    );
+    if (needsRugcheck) {
+      log("screening", `RugCheck: fetching security data for ${eligible.length} pool(s)...`);
+      const rugResults = await Promise.allSettled(
+        eligible.map((p) => p.base?.mint ? getRugcheckReport(p.base.mint) : Promise.resolve(null))
+      );
+      for (let i = 0; i < eligible.length; i++) {
+        const r = rugResults[i];
+        if (r.status !== "fulfilled" || !r.value) continue;
+        const rc = r.value;
+        eligible[i].rc_rug_score        = rc.rug_score;
+        eligible[i].rc_insider_pct      = rc.insider_pct;
+        eligible[i].rc_creator_hold_pct = rc.creator_hold_pct;
+        eligible[i].rc_lp_locked_pct    = rc.lp_locked_pct;
+        eligible[i].rc_risks            = rc.risks;
+        if (rc.top10_pct > 0 && eligible[i].top10_pct == null) {
+          eligible[i].top10_pct = rc.top10_pct; // backfill if not from Jupiter
+        }
+      }
+
+      // Insider % filter
+      const maxInsiderPct = config.screening.maxInsiderPct;
+      if (maxInsiderPct != null) {
+        const before = eligible.length;
+        eligible.splice(0, eligible.length, ...eligible.filter((p) => {
+          if (p.rc_insider_pct != null && p.rc_insider_pct > maxInsiderPct) {
+            log("screening", `Insider filter: dropped ${p.name} — insider ${p.rc_insider_pct}% > ${maxInsiderPct}%`);
+            pushFilteredReason(filteredOut, p, `insider wallets ${p.rc_insider_pct}% > ${maxInsiderPct}% limit`);
+            return false;
+          }
+          return true;
+        }));
+        if (eligible.length < before) log("screening", `Insider filter removed ${before - eligible.length} pool(s)`);
+      }
+
+      // Rug score filter (0-100, higher = riskier)
+      const maxRugRatio = config.screening.maxRugRatio;
+      if (maxRugRatio != null) {
+        const rugThreshold = maxRugRatio <= 1 ? maxRugRatio * 100 : maxRugRatio; // support both 0.3 and 30
+        const before = eligible.length;
+        eligible.splice(0, eligible.length, ...eligible.filter((p) => {
+          if (p.rc_rug_score != null && p.rc_rug_score > rugThreshold) {
+            log("screening", `Rug score filter: dropped ${p.name} — rug score ${p.rc_rug_score} > ${rugThreshold}`);
+            pushFilteredReason(filteredOut, p, `rug score ${p.rc_rug_score} > ${rugThreshold} limit`);
+            return false;
+          }
+          return true;
+        }));
+        if (eligible.length < before) log("screening", `Rug score filter removed ${before - eligible.length} pool(s)`);
+      }
+
+      // Dev/creator hold % filter
+      const maxDevHoldPct = config.screening.maxDevHoldPct;
+      if (maxDevHoldPct != null) {
+        const before = eligible.length;
+        eligible.splice(0, eligible.length, ...eligible.filter((p) => {
+          if (p.rc_creator_hold_pct != null && p.rc_creator_hold_pct > maxDevHoldPct) {
+            log("screening", `Dev hold filter: dropped ${p.name} — creator holds ${p.rc_creator_hold_pct}% > ${maxDevHoldPct}%`);
+            pushFilteredReason(filteredOut, p, `creator holds ${p.rc_creator_hold_pct}% > ${maxDevHoldPct}% limit`);
+            return false;
+          }
+          return true;
+        }));
+        if (eligible.length < before) log("screening", `Dev hold filter removed ${before - eligible.length} pool(s)`);
+      }
+    }
 
     // ATH filter — drop pools where price is too close to ATH
     const athFilter = config.screening.athFilterPct;
@@ -396,6 +554,21 @@ export async function getTopCandidates({ limit = 10 } = {}) {
       if (eligible.length < before) log("screening", `ATH filter removed ${before - eligible.length} pool(s)`);
     }
 
+    // Suspicious wallet % filter (OKX advanced) — proxy for insider concentration
+    const maxSuspPct = config.screening.maxSuspiciousPct;
+    if (maxSuspPct != null) {
+      const beforeSusp = eligible.length;
+      eligible.splice(0, eligible.length, ...eligible.filter((p) => {
+        if (p.suspicious_pct != null && p.suspicious_pct > maxSuspPct) {
+          log("screening", `Suspicious filter: dropped ${p.name} — suspicious wallets ${p.suspicious_pct}% > ${maxSuspPct}%`);
+          pushFilteredReason(filteredOut, p, `suspicious wallets ${p.suspicious_pct}% > ${maxSuspPct}% limit`);
+          return false;
+        }
+        return true;
+      }));
+      if (eligible.length < beforeSusp) log("screening", `Suspicious filter removed ${beforeSusp - eligible.length} pool(s)`);
+    }
+
     // Drop any pools whose creator is on the dev blocklist (caught via advanced-info)
     const before = eligible.length;
     const filtered = eligible.filter((p) => {
@@ -408,6 +581,32 @@ export async function getTopCandidates({ limit = 10 } = {}) {
     });
     eligible.splice(0, eligible.length, ...filtered);
     if (eligible.length < before) log("dev_blocklist", `Filtered ${before - eligible.length} pool(s) via OKX creator check`);
+  }
+
+  // ── 24h fee/TVL filter — ensures pool has been consistently active, not just a 5m spike ──
+  const minFee24h = config.screening.minFee24hTvlRatio;
+  if (minFee24h != null && eligible.length > 0) {
+    const results24h = await Promise.allSettled(
+      eligible.map((p) => getPoolDetail({ pool_address: p.pool, timeframe: "24h" }))
+    );
+    const before24h = eligible.length;
+    eligible.splice(0, eligible.length, ...eligible.filter((p, i) => {
+      const r = results24h[i];
+      if (r.status !== "fulfilled") return true; // API error → don't penalise
+      const raw = r.value;
+      const ratio = raw.fee_active_tvl_ratio > 0
+        ? raw.fee_active_tvl_ratio
+        : (raw.active_tvl > 0 ? (raw.fee / raw.active_tvl) * 100 : null);
+      if (ratio == null) return true; // no data → don't filter
+      p.fee_active_tvl_ratio_24h = Number(ratio.toFixed(4));
+      if (ratio < minFee24h) {
+        log("screening", `24h fee/TVL filter: dropped ${p.name} — ${ratio.toFixed(2)}% < ${minFee24h}%`);
+        pushFilteredReason(filteredOut, p, `24h fee/TVL ${ratio.toFixed(2)}% below ${minFee24h}% minimum`);
+        return false;
+      }
+      return true;
+    }));
+    if (eligible.length < before24h) log("screening", `24h fee/TVL filter removed ${before24h - eligible.length} pool(s)`);
   }
 
   if (config.indicators.enabled && eligible.length > 0) {
@@ -449,6 +648,46 @@ export async function getTopCandidates({ limit = 10 } = {}) {
     }
   }
 
+  // ── Fast-track: new pools with high volume + specific bin/fee config ─────
+  if (config.screening.fastTrackEnabled !== false) {
+    const ftMaxAge = config.screening.fastTrackMaxAgeHours ?? 3;
+    const ftMinVol = config.screening.fastTrackMinVolume   ?? 40_000;
+    const ftMinBins = config.screening.fastTrackMinBins    ?? 40;
+
+    try {
+      const ftPools = await fetchFastTrackPools({ maxAgeHours: ftMaxAge, minVolume: ftMinVol });
+      const eligibleByPool = new Map(eligible.map((e) => [e.pool, e]));
+
+      for (const p of ftPools) {
+        // Skip blacklisted, blocked devs, OOR/pool cooldowns, occupied pools/mints
+        if (isBlacklisted(p.base?.mint)) continue;
+        if (p.dev && isDevBlocked(p.dev)) continue;
+        if (isPoolOnCooldown(p.pool)) continue;
+        if (isBaseMintOnCooldown(p.base?.mint)) continue;
+        if (occupiedPools.has(p.pool)) continue;
+        if (occupiedMints.has(p.base?.mint)) continue;
+
+        p.fast_track = true;
+        p.fast_track_min_bins = ftMinBins;
+        p.fast_track_reason = `New pool (${p.token_age_hours ?? "?"}h old), bin_step=${p.bin_step}, fee=${p.fee_pct}%, vol=$${p.volume_window?.toLocaleString() ?? "?"}`;
+
+        if (eligibleByPool.has(p.pool)) {
+          // Already in normal candidates — just tag it
+          Object.assign(eligibleByPool.get(p.pool), {
+            fast_track: true,
+            fast_track_min_bins: ftMinBins,
+            fast_track_reason: p.fast_track_reason,
+          });
+        } else {
+          eligible.push(p);
+          log("screening", `Fast-track candidate: ${p.name} (${p.pool.slice(0, 8)}) — ${p.fast_track_reason}`);
+        }
+      }
+    } catch (e) {
+      log("screening", `Fast-track discovery error: ${e.message}`);
+    }
+  }
+
   return {
     candidates: eligible,
     total_screened: pools.length,
@@ -464,16 +703,14 @@ export async function getTopCandidates({ limit = 10 } = {}) {
 export async function getPoolDetail({ pool_address, timeframe = "5m" }) {
   const useServerDiscovery = !!config.api.publicApiKey;
   const url = useServerDiscovery
-    ? `${config.api.url}/discovery/pools/${pool_address}?timeframe=${encodeURIComponent(timeframe)}`
+    ? `${getAgentMeridianBase()}/discovery/pools/${pool_address}?timeframe=${encodeURIComponent(timeframe)}`
     : `${POOL_DISCOVERY_BASE}/pools?` +
       `page_size=1` +
       `&filter_by=${encodeURIComponent(`pool_address=${pool_address}`)}` +
       `&timeframe=${timeframe}`;
 
   const res = await fetch(url, {
-    headers: useServerDiscovery && config.api.publicApiKey
-      ? { "x-api-key": config.api.publicApiKey }
-      : {},
+    headers: useServerDiscovery ? getAgentMeridianHeaders() : {},
   });
 
   if (!res.ok) {

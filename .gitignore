@@ -1,31 +1,58 @@
-# Dependencies
-node_modules/
-
-# Environment & secrets
+# Environment
 .env
 .env.*
 !.env.example
-
-# User config (contains RPC URL, wallet key, API keys)
+*config.json
 user-config.json
+user-config.example.json
+secrets.json
+*.key
+*.pem
+private*
 
-# Runtime state (position tracking, lessons — user-specific)
-state.json
-lessons.json
-smart-wallets.json
-pool-memory.json
-token-blacklist.json
-strategy-library.json
-decision-log.json
-hivemind-cache.json
-signal-weights.json
+# Node
+node_modules/
+npm-debug.log*
 
 # Logs
 logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Dev context
-context.md
-docs/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# PM2
+.pm2/
+
+# Output sensitive
+output/invoice-*.docx
+output/Perjanjian*.docx
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Large binaries
+*.pdf
+*.xlsx
+*.xls
+*.zip
+*.tar.gz

@@ -1,0 +1,35 @@
+{
+  "active": "user_defined_strat_20260402",
+  "strategies": {
+    "user_defined_strat_20260402": {
+      "id": "user_defined_strat_20260402",
+      "name": "Fee-First DLMM Strategy (2026-04-02)",
+      "author": "User-defined",
+      "lp_strategy": "bid_ask",
+      "token_criteria": {
+        "min_mcap": 150000,
+        "min_age_days": null,
+        "requires_kol": false,
+        "notes": "No duplicate tokens, max 3 positions, fee_rate >= 2.0/hr, organic >= 76, volume >= $20k (30m)"
+      },
+      "entry": {
+        "condition": "Price >= -25% from ATH AND no 5%+ dump in 15m AND fee_rate >= 2.0/hr",
+        "price_change_threshold_pct": -25,
+        "single_side": "sol"
+      },
+      "range": {
+        "type": "adaptive",
+        "bins_below_pct": 10,
+        "notes": "Low vol: ±5%, Med: ±10–15%, High: ±15–25%"
+      },
+      "exit": {
+        "take_profit_pct": 4,
+        "notes": "Close if fee_rate < 1.5/hr OR OOR > 30m OR >6h open + low fee"
+      },
+      "best_for": "High-fee, stable-trending nano/micro caps",
+      "raw": "# 🧠 CORE PRINCIPLES\n\n* Profit comes from fees, not price speculation\n* Small drawdowns are normal and acceptable\n* Capital must always be actively deployed in high-yield pools\n* Avoid unnecessary position churn\n\n---\n\n# 🚫 POSITION CONSTRAINTS (STRICT)\n\n### NO DUPLICATE TOKEN\n\n* Never open more than one position per token\n* If token already exists in active positions → SKIP\n\n### MAX POSITIONS\n\n* Maximum active positions: 3\n* If already 3 → DO NOT open new positions\n\n### MIN CAPITAL\n\n* Minimum 0.4 SOL per position\n* If balance < 0.2 SOL → DO NOT open\n\n---\n\n# 📊 ENTRY STRATEGY \n\nOnly open position if ALL conditions are met:\n\n### PRICE CONDITION\n\n* Price is at least -25% from ATH\n\n### STABILITY FILTER\n\n* No dump greater than 5% in last 15 minutes\n\n### FEE FILTER\n\n* Estimated fee_rate >= 2.0 per hour\n\n### VOLATILITY-BASED RANGE\n\n* Adjust range dynamically:\n\n  * Low volatility → narrow range (±5%)\n  * Medium volatility → moderate range (±10–15%)\n  * High volatility → wide range (±15–25%)\n\n---\n\n# 💼 POSITION MANAGEMENT\n\n### HOLD LOGIC (PRIORITY)\n\nIf ALL conditions are true:\n\n* Price is inside range\n* pnl_pct > -15%\n* fee_rate is healthy\n\n→ FORCE HOLD\n→ Continue collecting fees\n→ DO NOT CLOSE\n\n---\n\n### EXIT LOGIC (PRIMARY: FEE-BASED)\n\nClose position if:\n\n* fee_rate < 1.5 per hour\n\n→ Close immediately\n→ Even if pnl is small profit (+1% to +2%)\n→ Redeploy capital\n\n---\n\n### OUT-OF-RANGE LOGIC\n\nIf:\n\n* Price is outside range for more than 30 minutes\n\n→ Close position\n→ Redeploy capital\n\n---\n\n### TIME-BASED EXIT\n\nIf:\n\n* Position open > 6 hours\n  AND\n* fee_rate below optimal\n\n→ Close and redeploy\n\n---\n\n# 🛑 STOP LOSS (STRICT)\n\nTrigger stop loss ONLY if:\n\n* pnl_pct <= -10\n  AND\n* Price is OUTSIDE range\n\nIf still inside range:\n→ NEVER trigger stop loss\n\n---\n\n# 🔄 AUTO REDEPLOY\n\nAfter closing a position:\n\n* Immediately scan market\n* Select best available pool\n* Reallocate capital efficiently\n\n---\n\n# 🧩 CAPITAL ALLOCATION\n\n* High fee pool → allocate more capital (e.g. 0.3–0.4 SOL)\n* Medium → 0.2–0.3 SOL\n* Low → skip\n\nNever fragment capital into small inefficient positions\n\n---\n\n# 🔍 PRE-OPEN VALIDATION (MANDATORY)\n\nBefore opening ANY position, verify:\n\n1. Token not already active\n2. Active positions < 3\n3. Available SOL >= 0.2\n4. Fee rate >= 2.0\n5. Market is stable (no heavy dump)\n6. Meets entry conditions\n\nIf ANY fail:\n→ DO NOT OPEN\n\n---\n\n# 📈 PNL HANDLING (CRITICAL)\n\n* pnl_pct is always in percentage format\n  Example: -0.36 means -0.36%\n\n* NEVER interpret -0.36 as -36%\n\n* NEVER rescale or multiply incorrectly\n\n---\n\n# 🧾 LOGGING (MANDATORY)\n\nAlways log:\n\n* token\n* pnl_pct (raw and interpreted)\n* fee_rate\n* in_range (true/false)\n* time_in_position\n* reason for action (HOLD / CLOSE / SKIP)\n\n---\n\n# 🧠 BEHAVIOR SUMMARY\n\n* Be patient\n* Prioritize yield over fear\n* Avoid overtrading\n* Stay in high-volume pools\n* Think long-term fee accumulation\n\n---\n\n# 🚀 EXECUTION PRIORITY\n\n1. Safety checks\n2. Fee quality\n3. Range positioning\n4. Capital efficiency\n5. PnL (lowest priority)",
+      "added_at": "2026-04-02T06:05:21.732Z",
+      "updated_at": "2026-04-02T06:05:21.732Z"
+    }
+  }
+}

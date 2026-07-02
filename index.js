@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import cron from "node-cron";
 import readline from "readline";
 import { agentLoop } from "./agent.js";
@@ -9,18 +11,21 @@ import { getTopCandidates } from "./tools/screening.js";
 import { config, reloadScreeningThresholds, computeDeployAmount } from "./config.js";
 import { evolveThresholds, getPerformanceSummary } from "./lessons.js";
 import { executeTool, registerCronRestarter } from "./tools/executor.js";
-import { startPolling, stopPolling, sendMessage, sendHTML, notifyOutOfRange, isEnabled as telegramEnabled, createLiveMessage } from "./telegram.js";
+import { startPolling, stopPolling, sendMessage, sendHTML, notifyOutOfRange, isEnabled as telegramEnabled, createLiveMessage, getWhitelist, addWhitelist, removeWhitelist } from "./telegram.js";
 import { generateBriefing } from "./briefing.js";
 import { getLastBriefingDate, setLastBriefingDate, getTrackedPosition, setPositionInstruction, updatePnlAndCheckExits, queuePeakConfirmation, resolvePendingPeak, queueTrailingDropConfirmation, resolvePendingTrailingDrop } from "./state.js";
 import { getActiveStrategy } from "./strategy-library.js";
 import { recordPositionSnapshot, recallForPool, addPoolNote } from "./pool-memory.js";
 import { checkSmartWalletsOnPool } from "./smart-wallets.js";
+import { checkDumpersInHolders } from "./dumper-wallets.js";
 import { getTokenNarrative, getTokenInfo } from "./tools/token.js";
 import { stageSignals } from "./signal-tracker.js";
 import { getWeightsSummary } from "./signal-weights.js";
 import { bootstrapHiveMind, ensureAgentId, getHiveMindPullMode, isHiveMindEnabled, pullHiveMindLessons, pullHiveMindPresets, registerHiveMindAgent, startHiveMindBackgroundSync } from "./hivemind.js";
 import { appendDecision } from "./decision-log.js";
-import { confirmIndicatorPreset } from "./tools/chart-indicators.js";
+
+const execFileAsync = promisify(execFile);
+const HERMES_BIN = process.env.HERMES_BIN || "/home/ubuntu/.local/bin/hermes";
 
 log("startup", "DLMM LP Agent starting...");
 log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
@@ -91,24 +96,8 @@ function sanitizeUntrustedPromptText(text, maxLen = 500) {
   return cleaned ? JSON.stringify(cleaned) : null;
 }
 
-async function confirmExitIndicator(position, closeReason) {
-  if (!config.indicators.enabled) {
-    return { confirmed: true, skipped: true, reason: "Indicators disabled" };
-  }
-  if (!position?.base_mint) {
-    return { confirmed: true, skipped: true, reason: "Missing base mint for indicator lookup" };
-  }
-  const confirmation = await confirmIndicatorPreset({
-    mint: position.base_mint,
-    side: "exit",
-  });
-  if (!confirmation.confirmed) {
-    log(
-      "indicators",
-      `Exit confirmation rejected for ${position.pair} (${closeReason}): ${confirmation.reason}`,
-    );
-  }
-  return confirmation;
+function shouldUsePnlRecheck() {
+  return !config.api.lpAgentRelayEnabled;
 }
 
 function schedulePeakConfirmation(positionAddress) {
@@ -177,9 +166,9 @@ async function maybeRunMissedBriefing() {
 
   if (lastSent === todayUtc) return; // already sent today
 
-  // Only fire if it's past the scheduled time (1:00 AM UTC)
+  // Only fire if it's past the scheduled time (00:00 UTC = 07:00 UTC+7)
   const nowUtc = new Date();
-  const briefingHourUtc = 1;
+  const briefingHourUtc = 0;
   if (nowUtc.getUTCHours() < briefingHourUtc) return; // too early, cron will handle it
 
   log("cron", `Missed briefing detected (last sent: ${lastSent || "never"}) — sending now`);
@@ -225,17 +214,16 @@ export async function runManagementCycle({ silent = false } = {}) {
     // JS trailing TP check
     const exitMap = new Map();
     for (const p of positionData) {
-      if (!p.pnl_pct_suspicious && queuePeakConfirmation(p.position, p.pnl_pct)) {
+      if (
+        !p.pnl_pct_suspicious &&
+        queuePeakConfirmation(p.position, p.pnl_pct, { immediate: !shouldUsePnlRecheck() }) &&
+        shouldUsePnlRecheck()
+      ) {
         schedulePeakConfirmation(p.position);
       }
       const exit = updatePnlAndCheckExits(p.position, p, config.management);
       if (exit) {
-        if (exit.action === "TRAILING_TP" && exit.needs_confirmation) {
-          if (queueTrailingDropConfirmation(p.position, exit.peak_pnl_pct, exit.current_pnl_pct, config.management.trailingDropPct)) {
-            scheduleTrailingDropConfirmation(p.position);
-          }
-          continue;
-        }
+        // Fix 2: removed needs_confirmation delay — act immediately on all exits
         exitMap.set(p.position, exit.reason);
         log("state", `Exit alert for ${p.pair}: ${exit.reason}`);
       }
@@ -247,14 +235,6 @@ export async function runManagementCycle({ silent = false } = {}) {
     for (const p of positionData) {
       // Hard exit — highest priority
       if (exitMap.has(p.position)) {
-        const indicatorConfirmation = await confirmExitIndicator(p, exitMap.get(p.position));
-        if (!indicatorConfirmation.confirmed) {
-          actionMap.set(p.position, {
-            action: "STAY",
-            indicatorHold: indicatorConfirmation.reason,
-          });
-          continue;
-        }
         actionMap.set(p.position, { action: "CLOSE", rule: "exit", reason: exitMap.get(p.position) });
         continue;
       }
@@ -266,14 +246,6 @@ export async function runManagementCycle({ silent = false } = {}) {
 
       const closeRule = getDeterministicCloseRule(p, config.management);
       if (closeRule) {
-        const indicatorConfirmation = await confirmExitIndicator(p, closeRule.reason);
-        if (!indicatorConfirmation.confirmed) {
-          actionMap.set(p.position, {
-            action: "STAY",
-            indicatorHold: indicatorConfirmation.reason,
-          });
-          continue;
-        }
         actionMap.set(p.position, closeRule);
         continue;
       }
@@ -294,17 +266,21 @@ export async function runManagementCycle({ silent = false } = {}) {
       const inRange = p.in_range ? "🟢 IN" : `🔴 OOR ${p.minutes_out_of_range ?? 0}m`;
       const val = config.management.solMode ? `◎${p.total_value_usd ?? "?"}` : `$${p.total_value_usd ?? "?"}`;
       const unclaimed = config.management.solMode ? `◎${p.unclaimed_fees_usd ?? "?"}` : `$${p.unclaimed_fees_usd ?? "?"}`;
-      const statusLabel = act.action === "INSTRUCTION" ? "HOLD (instruction)" : act.action;
+      const statusLabel = act.action === "INSTRUCTION" ? "HOLD (instruction)"
+                       : act.action === "REVIEW_TP"   ? "🎯 REVIEW TP"
+                       : act.action === "MONITOR_YIELD" ? "📊 MONITOR YIELD"
+                       : act.action;
+      const rangeBar = buildRangeBar(p.lower_bin, p.upper_bin, p.active_bin);
       let line = `**${p.pair}** | Age: ${p.age_minutes ?? "?"}m | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${p.pnl_pct ?? "?"}% | Yield: ${p.fee_per_tvl_24h ?? "?"}% | ${inRange} | ${statusLabel}`;
+      if (rangeBar) line += `\nRange: ${rangeBar}`;
       if (p.instruction) line += `\nNote: "${p.instruction}"`;
       if (act.action === "CLOSE" && act.rule === "exit") line += `\n⚡ Trailing TP: ${act.reason}`;
       if (act.action === "CLOSE" && act.rule && act.rule !== "exit") line += `\nRule ${act.rule}: ${act.reason}`;
-      if (act.indicatorHold) line += `\nIndicator hold: ${act.indicatorHold}`;
       if (act.action === "CLAIM") line += `\n→ Claiming fees`;
       return line;
     });
 
-    const needsAction = [...actionMap.values()].filter(a => a.action !== "STAY");
+    const needsAction = [...actionMap.values()].filter(a => a.action !== "STAY" && a.action !== "MONITOR_YIELD");
     const actionSummary = needsAction.length > 0
       ? needsAction.map(a => a.action === "INSTRUCTION" ? "EVAL instruction" : `${a.action}${a.reason ? ` (${a.reason})` : ""}`).join(", ")
       : "no action";
@@ -313,10 +289,27 @@ export async function runManagementCycle({ silent = false } = {}) {
     mgmtReport = reportLines.join("\n\n") +
       `\n\nSummary: 💼 ${positions.length} positions | ${cur}${totalValue.toFixed(4)} | fees: ${cur}${totalUnclaimed.toFixed(4)} | ${actionSummary}`;
 
-    // ── Call LLM only if action needed ──────────────────────────────
+    // ── Fix 1: Direct close (no LLM) for all deterministic CLOSE rules ─
+    const directClosePositions = positionData.filter(p => actionMap.get(p.position)?.action === "CLOSE");
+    if (directClosePositions.length > 0) {
+      log("cron", `⚡ Direct close: ${directClosePositions.length} position(s) — bypassing LLM`);
+      for (const p of directClosePositions) {
+        const act = actionMap.get(p.position);
+        log("cron", `⚡ Closing ${p.pair} — ${act.reason}`);
+        try {
+          const closeResult = await executeTool("close_position", { position_address: p.position });
+          mgmtReport += `\n⚡ Closed ${p.pair}: ${act.reason} — PnL: ${closeResult?.pnl_pct ?? "?"}%`;
+        } catch (e) {
+          log("cron_error", `Direct close failed for ${p.pair}: ${e.message}`);
+          mgmtReport += `\n⚠️ Close failed for ${p.pair}: ${e.message}`;
+        }
+      }
+    }
+
+    // ── Call LLM only for non-CLOSE actions (CLAIM, INSTRUCTION, REVIEW_TP, MONITOR_VOLUME) ─
     const actionPositions = positionData.filter(p => {
       const a = actionMap.get(p.position);
-      return a.action !== "STAY";
+      return a.action !== "STAY" && a.action !== "MONITOR_YIELD" && a.action !== "CLOSE";
     });
 
     if (actionPositions.length > 0) {
@@ -343,6 +336,9 @@ RULES:
 - CLOSE: call close_position only — it handles fee claiming internally, do NOT call claim_fees first
 - CLAIM: call claim_fees with position address
 - INSTRUCTION: evaluate the instruction condition. If met → close_position. If not → HOLD, do nothing.
+- MONITOR_VOLUME: position is OOR 10+ min but PnL not yet at -10%. Call get_pool_detail to check current 5m volume. If volume still active (>$5000/5m), HOLD and report. If volume is dead or drying up, call close_position.
+- REVIEW_TP: PnL has hit the TP review trigger. Call get_pool_detail to check current volume and momentum. Decide: (a) close now to lock profit, (b) hold and let trailing TP run, or (c) tighten trailing by setting a note. Default lean: HOLD if volume is still strong and price is trending up. Close if volume is fading or price reversed.
+- MONITOR_YIELD: yield is low but PnL proof threshold not met — position may be recovering. Do NOT close. Just report status.
 - ⚡ exit alerts: close immediately, no exceptions
 
 Execute the required actions. Do NOT re-evaluate CLOSE/CLAIM — rules already applied. Just execute.
@@ -377,7 +373,14 @@ After executing, write a brief one-line result per position.
       }
       for (const p of positions) {
         if (!p.in_range && p.minutes_out_of_range >= config.management.outOfRangeWaitMinutes) {
-          notifyOutOfRange({ pair: p.pair, minutesOOR: p.minutes_out_of_range }).catch(() => { });
+          notifyOutOfRange({
+            pair: p.pair,
+            minutesOOR: p.minutes_out_of_range,
+            lowerBin: p.lower_bin,
+            upperBin: p.upper_bin,
+            activeBin: p.active_bin,
+            pnlPct: p.pnl_pct,
+          }).catch(() => { });
         }
       }
     }
@@ -495,10 +498,34 @@ export async function runScreeningCycle({ silent = false } = {}) {
       return true;
     });
 
+    // Dumper wallet check — fetch top holders and scan against dumper blacklist
+    if (passing.length > 0 && passing.length <= 5) {
+      for (const entry of passing) {
+        try {
+          const { getTokenHolders } = await import("./tools/token.js");
+          const mint = entry.pool?.base?.mint || entry.pool?.base_mint;
+          if (!mint) continue;
+          const holderResult = await getTokenHolders({ mint, limit: 30 });
+          const holders = Array.isArray(holderResult)
+            ? holderResult
+            : holderResult?.holders || holderResult?.data?.holders || [];
+          if (holders.length === 0) continue;
+          const dumperCheck = checkDumpersInHolders(holders);
+          if (dumperCheck.found) {
+            const walletList = dumperCheck.matches.map((m) => `${m.address.slice(0, 8)}...`).join(", ");
+            log("screening", `Dumper-wallet filter: dropped ${entry.pool.name} — found ${dumperCheck.matches.length} dumper wallet(s): ${walletList}`);
+            filteredOut.push({ name: entry.pool.name, reason: `dumper wallets detected (${dumperCheck.matches.length})` });
+            // Remove from passing
+            const idx = passing.indexOf(entry);
+            if (idx >= 0) passing.splice(idx, 1);
+          }
+        } catch (e) {
+          log("screening", `Dumper wallet check error for ${entry.pool?.name}: ${e.message}`);
+        }
+      }
+    }
+
     if (passing.length === 0) {
-      const examples = filteredOut.slice(0, 3)
-        .map((entry) => `- ${entry.name}: ${entry.reason}`)
-        .join("\n");
       const combined = filteredOut.length > 0 ? filteredOut : earlyFilteredExamples;
       const combinedExamples = combined.slice(0, 3)
         .map((entry) => `- ${entry.name}: ${entry.reason}`)
@@ -556,12 +583,15 @@ export async function runScreeningCycle({ silent = false } = {}) {
 
       const block = [
         `POOL: ${pool.name} (${pool.pool})`,
-        `  metrics: bin_step=${pool.bin_step}, fee_pct=${pool.fee_pct}%, fee_tvl=${pool.fee_active_tvl_ratio}, vol=$${pool.volume_window}, tvl=$${pool.active_tvl}, volatility=${pool.volatility}, mcap=$${pool.mcap}, organic=${pool.organic_score}${pool.token_age_hours != null ? `, age=${pool.token_age_hours}h` : ""}`,
+        `  metrics: quote=${pool.quote?.symbol || "?"}, bin_step=${pool.bin_step}, fee_pct=${pool.fee_pct}%, fee_tvl=${pool.fee_active_tvl_ratio}, fee_tvl_24h=${pool.fee_active_tvl_ratio_24h ?? "?"}, vol=$${pool.volume_window}, tvl=$${pool.active_tvl}, volatility=${pool.volatility}, mcap=$${pool.mcap}, organic=${pool.organic_score}${pool.token_age_hours != null ? `, age=${pool.token_age_hours}h` : ""}`,
         `  audit: top10=${top10Pct}%, bots=${botPct}%, fees=${feesSol}SOL${launchpad ? `, launchpad=${launchpad}` : ""}`,
         pvpLine,
         okxParts ? `  okx: ${okxParts}` : okxUnavailable ? `  okx: unavailable` : null,
         okxTags  ? `  tags: ${okxTags}` : null,
         pool.price_vs_ath_pct != null ? `  ath: price_vs_ath=${pool.price_vs_ath_pct}%${pool.top_cluster_trend ? `, top_cluster=${pool.top_cluster_trend}` : ""}` : null,
+        (pool.rc_rug_score != null || pool.rc_insider_pct != null || pool.rc_creator_hold_pct != null)
+          ? `  rugcheck: score=${pool.rc_rug_score ?? "?"}${pool.rc_insider_pct != null ? `, insider=${pool.rc_insider_pct}%` : ""}${pool.rc_creator_hold_pct != null ? `, dev_hold=${pool.rc_creator_hold_pct}%` : ""}${pool.rc_lp_locked_pct != null ? `, lp_locked=${pool.rc_lp_locked_pct?.toFixed(1)}%` : ""}`
+          : null,
         `  smart_wallets: ${sw?.in_pool?.length ?? 0} present${sw?.in_pool?.length ? ` → CONFIDENCE BOOST (${sw.in_pool.map(w => w.name).join(", ")})` : ""}`,
         activeBin != null ? `  active_bin: ${activeBin}` : null,
         priceChange != null ? `  1h: price${priceChange >= 0 ? "+" : ""}${priceChange}%, net_buyers=${netBuyers ?? "?"}` : null,
@@ -574,6 +604,7 @@ export async function runScreeningCycle({ silent = false } = {}) {
         stageSignals(pool.pool, {
           organic_score:         pool.organic_score         ?? null,
           fee_tvl_ratio:         pool.fee_active_tvl_ratio  ?? null,
+    fee_tvl_24h: pool.fee_active_tvl_ratio_24h ?? pool.fee_tvl_24h ?? null,
           volume:                pool.volume_window         ?? null,
           mcap:                  pool.mcap                  ?? null,
           holder_count:          ti?.holders                ?? null,
@@ -599,7 +630,7 @@ ${candidateBlocks.join("\n\n")}
 STEPS:
 1. Pick the best candidate based on narrative quality, smart wallets, and pool metrics.
 2. Call deploy_position (active_bin is pre-fetched above — no need to call get_active_bin).
-   bins_below = round(35 + (volatility/5)*55) clamped to [35,90].
+   bins_below tier: volatility < 2 => 40, volatility 2-4 => 60, volatility > 4 => 80.
    For single-side SOL deploys, do not invent upside:
    set amount_y only, keep amount_x = 0, keep bins_above = 0, and let the upper bin stay at the active bin.
 3. Report in this exact format (no tables, no extra sections):
@@ -714,7 +745,7 @@ Summarize the current portfolio health, total fees earned, and performance of al
   });
 
   // Morning Briefing at 8:00 AM UTC+7 (1:00 AM UTC)
-  const briefingTask = cron.schedule(`0 1 * * *`, async () => {
+  const briefingTask = cron.schedule(`0 0 * * *`, async () => {
     await runBriefing();
   }, { timezone: 'UTC' });
 
@@ -732,48 +763,38 @@ Summarize the current portfolio health, total fees earned, and performance of al
       const result = await getMyPositions({ force: true, silent: true }).catch(() => null);
       if (!result?.positions?.length) return;
       for (const p of result.positions) {
-        if (!p.pnl_pct_suspicious && queuePeakConfirmation(p.position, p.pnl_pct)) {
+        if (
+          !p.pnl_pct_suspicious &&
+          queuePeakConfirmation(p.position, p.pnl_pct, { immediate: !shouldUsePnlRecheck() }) &&
+          shouldUsePnlRecheck()
+        ) {
           schedulePeakConfirmation(p.position);
         }
         const exit = updatePnlAndCheckExits(p.position, p, config.management);
         if (exit) {
-          const indicatorConfirmation = await confirmExitIndicator(p, exit.reason);
-          if (!indicatorConfirmation.confirmed) {
-            log("state", `[PnL poll] Exit alert suppressed by indicators: ${p.pair} — ${indicatorConfirmation.reason}`);
-            continue;
-          }
-          if (exit.action === "TRAILING_TP" && exit.needs_confirmation) {
-            if (queueTrailingDropConfirmation(p.position, exit.peak_pnl_pct, exit.current_pnl_pct, config.management.trailingDropPct)) {
-              scheduleTrailingDropConfirmation(p.position);
-            }
-            continue;
-          }
-          const cooldownMs = config.schedule.managementIntervalMin * 60 * 1000;
-          const sinceLastTrigger = Date.now() - _pollTriggeredAt;
-          if (sinceLastTrigger >= cooldownMs) {
-            _pollTriggeredAt = Date.now();
-            log("state", `[PnL poll] Exit alert: ${p.pair} — ${exit.reason} — triggering management`);
-            runManagementCycle({ silent: true }).catch((e) => log("cron_error", `Poll-triggered management failed: ${e.message}`));
-          } else {
-            log("state", `[PnL poll] Exit alert: ${p.pair} — ${exit.reason} — cooldown (${Math.round((cooldownMs - sinceLastTrigger) / 1000)}s left)`);
-          }
+          // Fix 1+2: no needs_confirmation delay, direct close without LLM — saves 60-90s vs old path
+          log("state", `[PnL poll] ⚡ Exit: ${p.pair} — ${exit.reason} — direct close (no LLM)`);
+          executeTool("close_position", { position_address: p.position })
+            .catch((e) => log("cron_error", `[PnL poll] Direct close failed for ${p.pair}: ${e.message}`));
           break;
         }
         const closeRule = getDeterministicCloseRule(p, config.management);
-        if (closeRule) {
-          const indicatorConfirmation = await confirmExitIndicator(p, closeRule.reason);
-          if (!indicatorConfirmation.confirmed) {
-            log("state", `[PnL poll] Deterministic close suppressed by indicators: ${p.pair} — ${indicatorConfirmation.reason}`);
-            continue;
-          }
+        if (closeRule?.action === "CLOSE") {
+          // Fix 1: deterministic CLOSE rules also bypass LLM from poller
+          log("state", `[PnL poll] ⚡ Rule ${closeRule.rule}: ${p.pair} — ${closeRule.reason} — direct close (no LLM)`);
+          executeTool("close_position", { position_address: p.position })
+            .catch((e) => log("cron_error", `[PnL poll] Direct close failed for ${p.pair}: ${e.message}`));
+          break;
+        } else if (closeRule) {
+          // Non-CLOSE rules (MONITOR_VOLUME, REVIEW_TP) still need LLM — trigger management cycle
           const cooldownMs = config.schedule.managementIntervalMin * 60 * 1000;
           const sinceLastTrigger = Date.now() - _pollTriggeredAt;
           if (sinceLastTrigger >= cooldownMs) {
             _pollTriggeredAt = Date.now();
-            log("state", `[PnL poll] Deterministic close rule: ${p.pair} — Rule ${closeRule.rule}: ${closeRule.reason} — triggering management`);
+            log("state", `[PnL poll] ${closeRule.action}: ${p.pair} — ${closeRule.reason} — triggering management`);
             runManagementCycle({ silent: true }).catch((e) => log("cron_error", `Poll-triggered management failed: ${e.message}`));
           } else {
-            log("state", `[PnL poll] Deterministic close rule: ${p.pair} — Rule ${closeRule.rule}: ${closeRule.reason} — cooldown (${Math.round((cooldownMs - sinceLastTrigger) / 1000)}s left)`);
+            log("state", `[PnL poll] ${closeRule.action}: ${p.pair} — ${closeRule.reason} — cooldown (${Math.round((cooldownMs - sinceLastTrigger) / 1000)}s left)`);
           }
           break;
         }
@@ -806,6 +827,15 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 // ═══════════════════════════════════════════
 //  FORMAT CANDIDATES TABLE
 // ═══════════════════════════════════════════
+function buildRangeBar(lo, hi, active, barLen = 20) {
+  if (lo == null || hi == null || active == null || hi <= lo) return null;
+  const pct = Math.max(0, Math.min(100, ((active - lo) / (hi - lo)) * 100));
+  const filled = Math.round((pct / 100) * barLen);
+  const bar = "█".repeat(filled) + "░".repeat(barLen - filled);
+  const label = active < lo ? "◀ below" : active > hi ? "▶ above" : `${Math.round(pct)}%`;
+  return `[${bar}] ${label}`;
+}
+
 function formatCandidates(candidates) {
   if (!candidates.length) return "  No eligible pools found right now.";
 
@@ -840,6 +870,16 @@ function getDeterministicCloseRule(position, managementConfig) {
   if (!pnlSuspect && position.pnl_pct != null && position.pnl_pct <= managementConfig.stopLossPct) {
     return { action: "CLOSE", rule: 1, reason: "stop loss" };
   }
+  // TP review mode — LLM evaluates at tpReviewTriggerPct before closing
+  if (
+    managementConfig.tpExitMode === "review" &&
+    managementConfig.tpReviewTriggerPct != null &&
+    !pnlSuspect &&
+    position.pnl_pct != null &&
+    position.pnl_pct >= managementConfig.tpReviewTriggerPct
+  ) {
+    return { action: "REVIEW_TP", rule: "tp_review", reason: `PnL ${position.pnl_pct.toFixed(2)}% ≥ TP review trigger ${managementConfig.tpReviewTriggerPct}%` };
+  }
   if (!pnlSuspect && position.pnl_pct != null && position.pnl_pct >= managementConfig.takeProfitPct) {
     return { action: "CLOSE", rule: 2, reason: "take profit" };
   }
@@ -850,20 +890,41 @@ function getDeterministicCloseRule(position, managementConfig) {
   ) {
     return { action: "CLOSE", rule: 3, reason: "pumped far above range" };
   }
-  if (
-    position.active_bin != null &&
-    position.upper_bin != null &&
-    position.active_bin > position.upper_bin &&
-    (position.minutes_out_of_range ?? 0) >= managementConfig.outOfRangeWaitMinutes
-  ) {
-    return { action: "CLOSE", rule: 4, reason: "OOR" };
+  // OOR rules
+  if (position.active_bin != null && position.upper_bin != null && position.active_bin > position.upper_bin) {
+    const minutesOOR = position.minutes_out_of_range ?? 0;
+    const cutlossMinutes = managementConfig.fastOorCutlossMinutes ?? 10;
+    const cutlossPct = managementConfig.fastOorCutlossPct ?? -10;
+
+    if (minutesOOR >= cutlossMinutes) {
+      if (!pnlSuspect && position.pnl_pct != null && position.pnl_pct <= cutlossPct) {
+        // OOR >= 10 menit DAN PnL <= -10% → paksa close
+        return { action: "CLOSE", rule: 4, reason: `Force close: OOR ${minutesOOR}m, PnL ${position.pnl_pct.toFixed(2)}% ≤ ${cutlossPct}%` };
+      }
+      // OOR >= 10 menit tapi PnL masih -1% s/d -9% → tahan, cek volume berkala
+      return { action: "MONITOR_VOLUME", rule: 4, reason: `OOR ${minutesOOR}m, PnL ${position.pnl_pct != null ? position.pnl_pct.toFixed(2) + "%" : "?"} belum -10%. Tahan dan cek volume berkala.` };
+    }
+
+    if (minutesOOR >= managementConfig.outOfRangeWaitMinutes) {
+      return { action: "CLOSE", rule: 4, reason: "OOR" };
+    }
   }
   if (
     position.fee_per_tvl_24h != null &&
     position.fee_per_tvl_24h < managementConfig.minFeePerTvl24h &&
-    (position.age_minutes ?? 0) >= 60
+    (position.age_minutes ?? 0) >= (managementConfig.minAgeBeforeYieldCheck ?? 60)
   ) {
-    return { action: "CLOSE", rule: 5, reason: "low yield" };
+    const drawdownPct  = managementConfig.lowYieldProofDrawdownPct;  // e.g. -2
+    const recoveryPct  = managementConfig.lowYieldProofRecoveryPct;  // e.g. -0.5
+    // Hold if position is recovering (PnL near breakeven or positive)
+    if (recoveryPct != null && position.pnl_pct != null && position.pnl_pct >= recoveryPct) {
+      return { action: "MONITOR_YIELD", rule: 5, reason: `Low yield but PnL ${position.pnl_pct.toFixed(2)}% ≥ ${recoveryPct}% (recovering). Hold and monitor.` };
+    }
+    // Hold if drawdown isn't deep enough to confirm position is bad
+    if (drawdownPct != null && (position.pnl_pct == null || position.pnl_pct > drawdownPct)) {
+      return { action: "MONITOR_YIELD", rule: 5, reason: `Low yield but PnL ${position.pnl_pct != null ? position.pnl_pct.toFixed(2) + "%" : "?"} not below ${drawdownPct}% proof threshold. Hold and monitor.` };
+    }
+    return { action: "CLOSE", rule: 5, reason: `low yield (${position.fee_per_tvl_24h}% < ${managementConfig.minFeePerTvl24h}%)` };
   }
   return null;
 }
@@ -948,11 +1009,34 @@ function parseConfigValue(raw) {
   return value;
 }
 
+async function runHermesPrompt(prompt) {
+  const cleanPrompt = String(prompt || "").trim();
+  if (!cleanPrompt) throw new Error("Prompt kosong. Gunakan /hermes <pesan>.");
+
+  const { stdout, stderr } = await execFileAsync(HERMES_BIN, ["--oneshot", cleanPrompt], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PATH: `/home/ubuntu/.local/bin:${process.env.PATH || ""}`,
+      HERMES_HOME: process.env.HERMES_HOME || "/home/ubuntu/.hermes",
+    },
+    timeout: 180000,
+    maxBuffer: 1024 * 1024,
+  });
+
+  const output = String(stdout || "").trim();
+  const warning = String(stderr || "").trim();
+  if (output) return output;
+  if (warning) return warning.slice(0, 1000);
+  return "Hermes selesai tanpa output.";
+}
+
 function formatHelpText() {
   return [
     "Telegram commands",
     "",
     "/help — show commands",
+    "/hermes <pesan> - tanya Hermes Meridian",
     "/status — wallet + positions snapshot",
     "/wallet — wallet, deploy amount, HiveMind status",
     "/positions — list open positions",
@@ -971,6 +1055,9 @@ function formatHelpText() {
     "/pause — stop cron cycles",
     "/resume — start cron cycles again",
     "/stop — shut down agent",
+    "/whitelist — lihat daftar ID Telegram yang diizinkan",
+    "/whitelist add <id> — tambah ID Telegram ke whitelist",
+    "/whitelist remove <id> — hapus ID Telegram dari whitelist",
   ].join("\n");
 }
 
@@ -1000,7 +1087,13 @@ async function deployLatestCandidate(index) {
     throw new Error("Invalid candidate index. Run /screen first.");
   }
   const deployAmount = computeDeployAmount((await getWalletBalances()).sol);
-  const binsBelow = Math.max(35, Math.min(90, Math.round(35 + ((Number(candidate.volatility) || 0) / 5) * 55)));
+  const volatility = Number(candidate.volatility) || 0;
+  const feeTvl = Number(candidate.fee_active_tvl_ratio ?? candidate.fee_tvl_ratio) || 0;
+  // Base bins from volatility
+  const baseBins = volatility < 2 ? 40 : volatility <= 4 ? 60 : 80;
+  // Fee/TVL modifier: if fee/TVL < 1%, widen range to avoid OOR during volume drops
+  const feeTvlBins = feeTvl < 0.5 ? 35 : feeTvl < 1.0 ? 20 : feeTvl < 2.0 ? 10 : 0;
+  const binsBelow = Math.min(baseBins + feeTvlBins, 80);
   const result = await executeTool("deploy_position", {
     pool_address: candidate.pool,
     amount_y: deployAmount,
@@ -1009,6 +1102,8 @@ async function deployLatestCandidate(index) {
     bins_above: 0,
     pool_name: candidate.name,
     base_mint: candidate.base?.mint || candidate.base_mint || null,
+    quote_symbol: candidate.quote?.symbol || candidate.quote_symbol || null,
+    quote_mint: candidate.quote?.mint || candidate.quote_mint || null,
     bin_step: candidate.bin_step,
     base_fee: candidate.base_fee,
     volatility: candidate.volatility,
@@ -1072,6 +1167,60 @@ async function telegramHandler(msg) {
     return;
   }
 
+  // ─── Whitelist commands ─────────────────────────────────
+  const wlMatch = text.match(/^\/whitelist(?:\s+(add|remove)\s+(\d+))?$/i);
+  if (wlMatch || text === "/whitelist") {
+    const action = wlMatch?.[1]?.toLowerCase();
+    const targetId = wlMatch?.[2];
+
+    if (!action) {
+      const ids = getWhitelist();
+      const list = ids.length > 0
+        ? ids.map((id, i) => `${i + 1}. ${id}`).join("\n")
+        : "(kosong)";
+      await sendMessage(`Whitelist Telegram (${ids.length}):\n\n${list}\n\nGunakan:\n/whitelist add <id>\n/whitelist remove <id>`).catch(() => {});
+      return;
+    }
+
+    if (action === "add" && targetId) {
+      const result = addWhitelist(targetId);
+      await sendMessage(result.success
+        ? `✅ ID ${targetId} ditambahkan ke whitelist.`
+        : `⚠️ ${result.reason}`).catch(() => {});
+      return;
+    }
+
+    if (action === "remove" && targetId) {
+      const result = removeWhitelist(targetId);
+      await sendMessage(result.success
+        ? `🗑️ ID ${targetId} dihapus dari whitelist.`
+        : `⚠️ ${result.reason}`).catch(() => {});
+      return;
+    }
+
+    await sendMessage("Format: /whitelist add <id> atau /whitelist remove <id>").catch(() => {});
+    return;
+  }
+
+  const hermesMatch = text.match(/^\/hermes(?:\s+([\s\S]+))?$/i);
+  if (hermesMatch) {
+    const prompt = hermesMatch[1]?.trim();
+    if (!prompt) {
+      await sendMessage("Gunakan: /hermes <pesan>\nContoh: /hermes cek status repo meridian").catch(() => {});
+      return;
+    }
+    try {
+      await sendMessage("Hermes Meridian sedang berpikir...").catch(() => {});
+      log("telegram", `Hermes command: ${prompt.slice(0, 120)}`);
+      const answer = await runHermesPrompt(prompt);
+      await sendMessage(`Hermes Meridian:\n\n${answer}`).catch(() => {});
+    } catch (e) {
+      log("telegram_error", `Hermes command failed: ${e.message}`);
+      await sendMessage(`Hermes error: ${e.message}`).catch(() => {});
+    }
+    return;
+  }
+
   if (text === "/wallet" || text === "/status") {
     try {
       const [wallet, positions] = await Promise.all([getWalletBalances(), getMyPositions({ force: true })]);
@@ -1099,9 +1248,19 @@ async function telegramHandler(msg) {
         const pnl = p.pnl_usd >= 0 ? `+${cur}${p.pnl_usd}` : `-${cur}${Math.abs(p.pnl_usd)}`;
         const age = p.age_minutes != null ? `${p.age_minutes}m` : "?";
         const oor = !p.in_range ? " ⚠️OOR" : "";
-        return `${i + 1}. ${p.pair} | ${cur}${p.total_value_usd} | PnL: ${pnl} | fees: ${cur}${p.unclaimed_fees_usd} | ${age}${oor}`;
+        // Range progress bar
+        let rangeBar = "";
+        const lo = p.lower_bin, hi = p.upper_bin, active = p.active_bin;
+        if (lo != null && hi != null && active != null && hi > lo) {
+          const BAR_LEN = 20;
+          const pct = Math.max(0, Math.min(100, ((active - lo) / (hi - lo)) * 100));
+          const filled = Math.round((pct / 100) * BAR_LEN);
+          const bar = "█".repeat(filled) + "░".repeat(BAR_LEN - filled);
+          rangeBar = `\n   [${bar}] ${Math.round(pct)}%`;
+        }
+        return `${i + 1}. ${p.pair} | ${cur}${p.total_value_usd} | PnL: ${pnl} | fees: ${cur}${p.unclaimed_fees_usd} | ${age}${oor}${rangeBar}`;
       });
-      await sendMessage(`📊 Open Positions (${total_positions}):\n\n${lines.join("\n")}\n\n/close <n> to close | /set <n> <note> to set instruction`);
+      await sendMessage(`📊 Open Positions (${total_positions}):\n\n${lines.join("\n\n")}\n\n/close <n> to close | /set <n> <note> to set instruction`);
     } catch (e) { await sendMessage(`Error: ${e.message}`).catch(() => {}); }
     return;
   }
@@ -1113,14 +1272,16 @@ async function telegramHandler(msg) {
       const { positions } = await getMyPositions({ force: true });
       if (idx < 0 || idx >= positions.length) { await sendMessage("Invalid number. Use /positions first."); return; }
       const pos = positions[idx];
+      const rangeBar = buildRangeBar(pos.lower_bin, pos.upper_bin, pos.active_bin);
       await sendMessage([
         `${idx + 1}. ${pos.pair}`,
         `Pool: ${pos.pool}`,
         `Position: ${pos.position}`,
         `Range: ${pos.lower_bin} → ${pos.upper_bin} | active ${pos.active_bin}`,
+        rangeBar ? `       ${rangeBar}` : null,
         `PnL: ${pos.pnl_pct ?? "?"}% | fees: ${config.management.solMode ? "◎" : "$"}${pos.unclaimed_fees_usd ?? "?"}`,
         `Value: ${config.management.solMode ? "◎" : "$"}${pos.total_value_usd ?? "?"}`,
-        `Age: ${pos.age_minutes ?? "?"}m | ${pos.in_range ? "IN RANGE" : `OOR ${pos.minutes_out_of_range ?? 0}m`}`,
+        `Age: ${pos.age_minutes ?? "?"}m | ${pos.in_range ? "🟢 IN RANGE" : `🔴 OOR ${pos.minutes_out_of_range ?? 0}m`}`,
         pos.instruction ? `Note: ${pos.instruction}` : null,
       ].filter(Boolean).join("\n"));
     } catch (e) {
@@ -1256,6 +1417,40 @@ async function telegramHandler(msg) {
       await sendMessage("▶️ Autonomous cycles resumed.").catch(() => {});
     } else {
       await sendMessage("Autonomous cycles are already running.").catch(() => {});
+    }
+    return;
+  }
+
+  // ── Whitelist management ──────────────────────
+  const whitelistMatch = text.match(/^\/whitelist(?:\s+(add|remove)\s+(\d+))?$/i);
+  if (whitelistMatch) {
+    const action = whitelistMatch[1]?.toLowerCase();
+    const id = whitelistMatch[2];
+
+    if (!action) {
+      const ids = getWhitelist();
+      if (ids.length === 0) {
+        await sendMessage("📋 Whitelist kosong. Gunakan /whitelist add <id> untuk menambah.").catch(() => {});
+      } else {
+        await sendMessage(`📋 Whitelist (${ids.length}):\n${ids.map((id) => `  • ${id}`).join("\n")}`).catch(() => {});
+      }
+      return;
+    }
+
+    if (action === "add") {
+      const result = addWhitelist(id);
+      if (result.success) {
+        await sendMessage(`✅ ID ${id} ditambahkan ke whitelist.`).catch(() => {});
+      } else {
+        await sendMessage(`⚠️ ${result.reason}`).catch(() => {});
+      }
+    } else if (action === "remove") {
+      const result = removeWhitelist(id);
+      if (result.success) {
+        await sendMessage(`✅ ID ${id} dihapus dari whitelist.`).catch(() => {});
+      } else {
+        await sendMessage(`⚠️ ${result.reason}`).catch(() => {});
+      }
     }
     return;
   }

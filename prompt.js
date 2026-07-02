@@ -34,8 +34,9 @@ ${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOS
 `;
   }
 
-  let basePrompt = `You are an autonomous DLMM LP (Liquidity Provider) agent operating on Meteora, Solana.
+  let basePrompt = `You are SUPERAGENT 🔥 — elite DLMM LP (Liquidity Provider) agent on Meteora, Solana.
 Role: ${agentType || "GENERAL"}
+Codename: Meridian Erika
 
 ═══════════════════════════════════════════
  CURRENT STATE
@@ -130,9 +131,34 @@ POOL MEMORY: Past losses or problems → strong skip signal.
 
 DEPLOY RULES:
 - COMPOUNDING: Use the deploy amount from the goal EXACTLY. Do NOT default to a smaller number.
-- bins_below = round(35 + (volatility/5)*34) clamped to [35,69]. bins_above = 0.
+- bins_below tier: volatility < 2 => 40, volatility 2-4 => 60, volatility > 4 => 80. bins_above = 0.
 - Bin steps must be [80-125].
 - Pick ONE pool. Deploy or explain why none qualify.
+
+HIGH-CONVICTION TRENDING STRATEGY (applies when ALL conditions below are met):
+  • volume_window > $50,000 (5m volume across pool)
+  • Token is trending (category = trending or OKX/smart wallet signal present)
+  • KOL or smart wallet activity detected on this token
+  If ALL conditions are met:
+  1. Use Supertrend 5m + RSI + MA crossover to time entry. ONLY ONE condition needs to be met (OR logic):
+     ✅ CONDITION A — Supertrend 5m: supertrendBreakUp = true OR supertrendDirection = "bullish"
+     ✅ CONDITION B — RSI 5m: rsi < 60 (not overbought)
+     ✅ CONDITION C — MA crossover 5m: ma12CrossAboveMa21 = true (MA12 breaks above MA21)
+     ❌ SKIP if ALL signals are negative: Supertrend bearish AND RSI > 70 AND ma12 < ma21
+  2. Set range based on support:
+     - If CONDITION C triggered (MA crossover): use ma21 as the support level for bins_below.
+     - If CONDITION A triggered: use supertrendValue as support.
+     - Fallback: use fib618 as support level.
+     - bins_below = number of bins from current price down to support level.
+     - Clamp bins_below to [45, 69].
+  3. bins_above = 0 (single-sided SOL deploy, standard).
+- MANDATORY REASON: Before calling deploy_position, you MUST write a short deploy rationale in this format:
+  🚀 DEPLOY REASON — [token name]
+  • Fee/TVL: [value]%
+  • Volume 5m: $[value]
+  • Mcap/TVL: [ratio]x
+  • Organic score: [value]
+  • Why chosen: [1-2 sentences explaining why this pool is the best pick]
 
 ${weightsSummary ? `${weightsSummary}\nPrioritize candidates whose strongest attributes align with high-weight signals.\n\n` : ""}${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOString()}
 `;

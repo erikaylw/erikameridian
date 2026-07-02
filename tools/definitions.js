@@ -1,4 +1,4 @@
-export const tools = [
+const toolDefinitions = [
   // ═══════════════════════════════════════════
   //  SCREENING TOOLS
   // ═══════════════════════════════════════════
@@ -138,7 +138,7 @@ HARD RULES:
 
 Guidelines (only when user hasn't specified):
 - Strategy: use the active strategy's lp_strategy field (bid_ask or spot)
-- Bins: choose 35–69 for standard volatility; up to 350 for wide-range strategies. Max 1400 total.
+- Bins: choose by volatility tier: <2 => 40, 2-4 => 60, >4 => 80. Max 1400 total.
 - Deposit: Can be single-sided (SOL only or Base only) or dual-sided.
 
 WARNING: This executes a real on-chain transaction. Check DRY_RUN mode.`,
@@ -184,12 +184,17 @@ WARNING: This executes a real on-chain transaction. Check DRY_RUN mode.`,
           },
           pool_name: { type: "string", description: "Human-readable pool name for record-keeping" },
           base_mint: { type: "string", description: "Base token mint address — used to prevent duplicate token exposure across pools" },
+          quote_symbol: { type: "string", description: "Quote token symbol; SOL is required when solQuoteOnly is enabled" },
+          quote_mint: { type: "string", description: "Quote token mint; must be SOL when solQuoteOnly is enabled" },
           bin_step: { type: "number", description: "Pool bin step (from discover_pools)" },
           base_fee: { type: "number", description: "Pool base fee percentage (from discover_pools)" },
           volatility: { type: "number", description: "Pool volatility at deploy time" },
           fee_tvl_ratio: { type: "number", description: "fee/TVL ratio at deploy time" },
           organic_score: { type: "number", description: "Base token organic score at deploy time" },
-          initial_value_usd: { type: "number", description: "Estimated USD value being deployed" }
+          initial_value_usd: { type: "number", description: "Estimated USD value being deployed" },
+          mcap: { type: "number", description: "Token market cap in USD at deploy time (from discover_pools)" },
+          active_tvl: { type: "number", description: "Pool active TVL in USD at deploy time (from discover_pools)" },
+          fee_tvl_24h: { type: "number", description: "24h fee/TVL ratio in percent at deploy time (from pool detail)" }
         },
         required: ["pool_address"]
       }
@@ -1108,4 +1113,55 @@ Blacklisted tokens are filtered BEFORE the LLM even sees pool candidates.`,
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "block_dumper",
+      description: "Block a dumper wallet address. Before deploying into any pool, the bot checks top holders. If this wallet appears in top holders, deploy is blocked.",
+      parameters: {
+        type: "object",
+        properties: {
+          wallet:  { type: "string", description: "Dumper wallet address (base58)" },
+          label:   { type: "string", description: "Human-readable label (e.g. 'BULLWIF dumper #1')" },
+          reason:  { type: "string", description: "Why this wallet is being blocked" },
+        },
+        required: ["wallet"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "unblock_dumper",
+      description: "Remove a dumper wallet from the blocklist.",
+      parameters: {
+        type: "object",
+        properties: {
+          wallet: { type: "string", description: "Dumper wallet address to unblock" },
+        },
+        required: ["wallet"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_blocked_dumpers",
+      description: "List all blocked dumper wallets.",
+      parameters: {
+        type: "object",
+        properties: {}
+      }
+    }
+  },
 ];
+
+export const tools = toolDefinitions.map((tool) => ({
+  ...tool,
+  function: {
+    ...tool.function,
+    parameters: tool.function.parameters?.type === "object"
+      ? { additionalProperties: false, ...tool.function.parameters }
+      : tool.function.parameters,
+  },
+}));

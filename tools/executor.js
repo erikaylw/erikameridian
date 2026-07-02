@@ -18,6 +18,7 @@ import { getPoolMemory, addPoolNote } from "../pool-memory.js";
 import { addStrategy, listStrategies, getStrategy, setActiveStrategy, removeStrategy } from "../strategy-library.js";
 import { addToBlacklist, removeFromBlacklist, listBlacklist } from "../token-blacklist.js";
 import { blockDev, unblockDev, listBlockedDevs } from "../dev-blocklist.js";
+import { blockDumper, unblockDumper, listBlockedDumpers, checkHoldersAgainstDumperBlocklist } from "../dumper-blocklist.js";
 import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsOnPool } from "../smart-wallets.js";
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { config, reloadScreeningThresholds } from "../config.js";
@@ -35,6 +36,68 @@ import { notifyDeploy, notifyClose, notifySwap } from "../telegram.js";
 // Registered by index.js so update_config can restart cron jobs when intervals change
 let _cronRestarter = null;
 export function registerCronRestarter(fn) { _cronRestarter = fn; }
+
+function coerceBoolean(value, key) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  throw new Error(`${key} must be true or false`);
+}
+
+function coerceFiniteNumber(value, key) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error(`${key} must be a finite number`);
+  return n;
+}
+
+function coerceString(value, key) {
+  if (typeof value !== "string") throw new Error(`${key} must be a string`);
+  return value.trim();
+}
+
+function coerceStringArray(value, key) {
+  if (!Array.isArray(value)) throw new Error(`${key} must be an array of strings`);
+  return value.map((entry) => coerceString(entry, key)).filter(Boolean);
+}
+
+function normalizeConfigValue(key, value) {
+  const booleanKeys = new Set([
+    "excludeHighSupplyConcentration",
+    "useDiscordSignals",
+    "avoidPvpSymbols",
+    "blockPvpSymbols",
+    "autoSwapAfterClaim",
+    "trailingTakeProfit",
+    "solMode",
+    "darwinEnabled",
+    "lpAgentRelayEnabled",
+    "fastTrackEnabled",
+  ]);
+  const arrayKeys = new Set(["allowedLaunchpads", "blockedLaunchpads"]);
+  const stringKeys = new Set([
+    "timeframe",
+    "category",
+    "discordSignalMode",
+    "strategy",
+    "managementModel",
+    "screeningModel",
+    "generalModel",
+    "hiveMindUrl",
+    "hiveMindApiKey",
+    "agentId",
+    "hiveMindPullMode",
+    "publicApiKey",
+    "agentMeridianApiUrl",
+  ]);
+  if (value === null) return null;
+  if (booleanKeys.has(key)) return coerceBoolean(value, key);
+  if (arrayKeys.has(key)) return coerceStringArray(value, key);
+  if (stringKeys.has(key)) return coerceString(value, key);
+  return coerceFiniteNumber(value, key);
+}
 
 // Map tool names to implementations
 const toolMap = {
@@ -101,6 +164,9 @@ const toolMap = {
   block_deployer: blockDev,
   unblock_deployer: unblockDev,
   list_blocked_deployers: listBlockedDevs,
+  block_dumper: blockDumper,
+  unblock_dumper: unblockDumper,
+  list_blocked_dumpers: listBlockedDumpers,
   add_lesson: ({ rule, tags, pinned, role }) => {
     addLesson(rule, tags || [], { pinned: !!pinned, role: role || null });
     return { saved: true, rule, pinned: !!pinned, role: role || "all" };
@@ -158,6 +224,15 @@ const toolMap = {
       minTokenAgeHours: ["screening", "minTokenAgeHours"],
       maxTokenAgeHours: ["screening", "maxTokenAgeHours"],
       athFilterPct:     ["screening", "athFilterPct"],
+      maxMcapToTvlRatio:    ["screening", "maxMcapToTvlRatio"],
+      minFee24hTvlRatio:    ["screening", "minFee24hTvlRatio"],
+      minRealtimeFeeTvlRatio: ["screening", "minRealtimeFeeTvlRatio"],
+      solQuoteOnly:          ["screening", "solQuoteOnly"],
+      minVolume5m:          ["screening", "minVolume5m"],
+      fastTrackEnabled:     ["screening", "fastTrackEnabled"],
+      fastTrackMaxAgeHours: ["screening", "fastTrackMaxAgeHours"],
+      fastTrackMinVolume:   ["screening", "fastTrackMinVolume"],
+      fastTrackMinBins:     ["screening", "fastTrackMinBins"],
       minFeePerTvl24h: ["management", "minFeePerTvl24h"],
       // management
       minClaimAmount: ["management", "minClaimAmount"],
@@ -167,6 +242,11 @@ const toolMap = {
       oorCooldownTriggerCount: ["management", "oorCooldownTriggerCount"],
       oorCooldownHours: ["management", "oorCooldownHours"],
       minVolumeToRebalance: ["management", "minVolumeToRebalance"],
+      fastOorCutlossMinutes:    ["management", "fastOorCutlossMinutes"],
+      fastOorCutlossPct:        ["management", "fastOorCutlossPct"],
+      manualCloseCooldownHours: ["management", "manualCloseCooldownHours"],
+      poolCloseCooldownHours:   ["management", "poolCloseCooldownHours"],
+      weakCloseCooldownHours:   ["management", "weakCloseCooldownHours"],
       stopLossPct: ["management", "stopLossPct"],
       takeProfitPct: ["management", "takeProfitPct"],
       takeProfitFeePct: ["management", "takeProfitPct"],
@@ -216,10 +296,18 @@ const toolMap = {
       Object.entries(CONFIG_MAP).map(([k, v]) => [k.toLowerCase(), [k, v]])
     );
 
+    if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
+      return { success: false, error: "changes must be an object", reason };
+    }
+
     for (const [key, val] of Object.entries(changes)) {
       const match = CONFIG_MAP[key] ? [key, CONFIG_MAP[key]] : CONFIG_MAP_LOWER[key.toLowerCase()];
       if (!match) { unknown.push(key); continue; }
-      applied[match[0]] = val;
+      try {
+        applied[match[0]] = normalizeConfigValue(match[0], val);
+      } catch (error) {
+        return { success: false, error: error.message, key: match[0], reason };
+      }
     }
 
     if (Object.keys(applied).length === 0) {
@@ -227,7 +315,16 @@ const toolMap = {
       return { success: false, unknown, reason };
     }
 
-    // Apply to live config immediately
+    let userConfig = {};
+    if (fs.existsSync(USER_CONFIG_PATH)) {
+      try {
+        userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"));
+      } catch (error) {
+        return { success: false, error: `Invalid user-config.json: ${error.message}`, reason };
+      }
+    }
+
+    // Apply to live config immediately after the persisted config is known-good.
     for (const [key, val] of Object.entries(applied)) {
       const [section, field] = CONFIG_MAP[key];
       const before = config[section][field];
@@ -235,11 +332,6 @@ const toolMap = {
       log("config", `update_config: config.${section}.${field} ${before} → ${val} (verify: ${config[section][field]})`);
     }
 
-    // Persist to user-config.json
-    let userConfig = {};
-    if (fs.existsSync(USER_CONFIG_PATH)) {
-      try { userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8")); } catch { /**/ }
-    }
     Object.assign(userConfig, applied);
     userConfig._lastAgentTune = new Date().toISOString();
     fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(userConfig, null, 2));
@@ -251,9 +343,7 @@ const toolMap = {
       log("config", `Cron restarted — management: ${config.schedule.managementIntervalMin}m, screening: ${config.schedule.screeningIntervalMin}m`);
     }
 
-    // Save as a lesson — but skip ephemeral per-deploy interval changes
-    // (managementIntervalMin / screeningIntervalMin change every deploy based on volatility;
-    //  the rule is already in the system prompt, storing it 75+ times is pure noise)
+    // Skip repeated volatility-driven interval changes; they are operational tuning, not reusable lessons.
     const lessonsKeys = Object.keys(applied).filter(
       k => k !== "managementIntervalMin" && k !== "screeningIntervalMin"
     );
@@ -401,6 +491,15 @@ async function runSafetyChecks(name, args) {
         };
       }
 
+      // Minimum bins_below = 45
+      const minBinsBelow = config.strategy.binsBelow ?? 45;
+      if (args.bins_below != null && args.bins_below < minBinsBelow) {
+        return {
+          pass: false,
+          reason: `bins_below ${args.bins_below} is below the minimum allowed (${minBinsBelow}). Use at least ${minBinsBelow} bins.`,
+        };
+      }
+
       // Check position count limit + duplicate pool guard — force fresh scan to avoid stale cache
       const positions = await getMyPositions({ force: true });
       if (positions.total_positions >= config.risk.maxPositions) {
@@ -433,6 +532,48 @@ async function runSafetyChecks(name, args) {
       }
 
       // Check amount limits
+      // Hard block: deploy only into SOL-quoted pools when quote metadata is available
+      if (config.screening.solQuoteOnly !== false) {
+        const quoteSymbol = String(args.quote_symbol || args.quote?.symbol || "").trim().toUpperCase();
+        const quoteMint = args.quote_mint || args.quote?.mint || null;
+        if ((quoteSymbol && quoteSymbol !== "SOL") || (quoteMint && quoteMint !== config.tokens.SOL)) {
+          return {
+            pass: false,
+            reason: `Pool quote token must be SOL. Got quote_symbol=${quoteSymbol || "unknown"}, quote_mint=${quoteMint || "unknown"}.`,
+          };
+        }
+      }
+
+      // Hard block: current timeframe fee/TVL must show active fee generation
+      const minRealtimeFeeTvl = config.screening.minRealtimeFeeTvlRatio;
+      if (minRealtimeFeeTvl != null && args.fee_tvl_ratio != null && args.fee_tvl_ratio < minRealtimeFeeTvl) {
+        return {
+          pass: false,
+          reason: `Current fee/TVL ${args.fee_tvl_ratio.toFixed(2)}% is below the minimum ${minRealtimeFeeTvl}%. Pool is too weak right now.`,
+        };
+      }
+
+      // Hard block: dumper wallets in top holders
+      if (args.base_mint) {
+        try {
+          const holders = await getTokenHolders({ mint: args.base_mint, limit: 20 });
+          const realHolders = Array.isArray(holders?.holders) ? holders.holders : [];
+          const matches = checkHoldersAgainstDumperBlocklist(realHolders);
+          if (matches.length > 0) {
+            const details = matches.map((m) =>
+              `${m.address.slice(0, 8)} (${m.label || "unknown"}): ${m.pct != null ? m.pct.toFixed(2) + "%" : "?"}`
+            ).join("; ");
+            return {
+              pass: false,
+              reason: `Blocked dumper wallet(s) found in top holders of ${args.base_mint.slice(0, 8)}: ${details}`,
+            };
+          }
+        } catch (e) {
+          log("dumper_blocklist", `Error checking dumper holders for ${args.base_mint?.slice(0, 8)}: ${e.message}`);
+          // Don't block deploy on API error — just warn
+        }
+      }
+
       const amountY = args.amount_y ?? args.amount_sol ?? 0;
       if (amountY <= 0) {
         return {
@@ -467,6 +608,18 @@ async function runSafetyChecks(name, args) {
           };
         }
       }
+
+      // Hard block: 24h fee/TVL must meet minimum threshold
+      const minFee24h = config.screening.minFee24hTvlRatio;
+      if (minFee24h != null && args.fee_tvl_24h != null) {
+        if (args.fee_tvl_24h < minFee24h) {
+          return {
+            pass: false,
+            reason: `24h fee/TVL ${args.fee_tvl_24h.toFixed(2)}% is below the minimum ${minFee24h}%. Pool not generating enough fees relative to liquidity.`,
+          };
+        }
+      }
+
 
       return { pass: true };
     }
